@@ -4,3 +4,16 @@ targets: [claude]
 dependencies:
   apm:
     - ./skills/github-flow
+    # External skill sources are supported too -- apm resolves a pinned
+    # git ref natively, no extra tooling needed on our side:
+    #
+    #   - git: https://github.com/<owner>/<repo>.git
+    #     path: path/to/skill        # optional, if the skill isn't at the repo root
+    #     ref: v1.2.3                # branch, tag, or commit; always pin a ref
+    #
+    # Fetched content is untrusted by construction. Anyone adding an
+    # external entry here is responsible for having reviewed what that
+    # ref actually contains -- the same way you'd review any dependency
+    # before adding it -- before it gets read into a Composer/Crafter
+    # run. This repository intentionally has no external entries yet;
+    # this is the syntax for when one is needed.

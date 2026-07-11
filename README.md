@@ -100,11 +100,33 @@ apply mechanically, so every state transition is explainable from logs.
 | `scripts/gf.py` | tested decision logic (state, ready checkbox, routing) |
 | `scripts/setup-labels.sh` | create the `flow` + `flow/*` labels in a consumer repo |
 | `skills/github-flow/` | skill document and agent contracts |
+| `apm.yml` | declares this repository's own skill(s) as dependencies of the [microsoft/apm](https://github.com/microsoft/apm) CLI, which `actions/build-context` uses to place them |
 | `tests/` | unit tests for `gf.py` |
 
 Reusable workflows live under `.github/workflows/` (a GitHub requirement
 for `workflow_call`), not the `workflows/` directory originally sketched in
 issue #1.
+
+## Skill dependencies (`apm.yml`)
+
+`actions/build-context` places `skills/github-flow/` at
+`.claude/skills/github-flow/` in the working tree before every
+Composer/Crafter run, so Claude Code's own Agent Skills detection picks it
+up (see the Skill tool invocation in `shape.yml`/`build.yml`). It does
+this by shelling out to the real [`apm`](https://github.com/microsoft/apm)
+CLI against `apm.yml` — a local package dependency today. Deployment is
+redirected to a scratch directory (`--root`) and the result is copied in
+and recorded in `.git/info/exclude`, so nothing `apm` or the placement
+step writes is ever committed or shows up in a Crafter PR diff.
+
+`apm.yml`'s dependency syntax also supports pinned external git sources
+(`git: <url>` + `ref: <tag-or-sha>`, optionally `path:` for a
+subdirectory) — this repository has none today, but the syntax is
+documented inline in `apm.yml` for when one is needed. **Fetched content
+is untrusted by construction**: whoever adds an external entry is
+responsible for having reviewed what that ref actually contains before
+it gets read into a Composer or Crafter run, the same way you'd review
+any other dependency before adding it.
 
 ## Development
 
