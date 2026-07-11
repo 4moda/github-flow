@@ -3,8 +3,10 @@ description: >-
   Collect everything a github-flow agent run needs into a context directory:
   issue payload, body and conversation, current flow/* state, ready-checkbox
   state, linked PR with its review feedback, a repository tree summary, and
-  the agent contracts. The target repository must already be checked out in
-  the workspace.
+  the agent contracts. Also places the github-flow skill into the checked
+  out working tree (.claude/skills/github-flow/) so Claude Code's own Agent
+  Skills detection picks it up. The target repository must already be
+  checked out in the workspace.
 inputs:
   issue-number:
     description: Issue number in the current repository
@@ -79,6 +81,20 @@ runs:
               break
             fi
           done
+
+          # Place the skill where Claude Code's own Agent Skills detection
+          # looks for it, so the Composer/Crafter prompts can invoke it by
+          # name via the Skill tool instead of being told an exact file
+          # path to Read. Excluded locally (not committed, not .gitignore)
+          # so it never leaks into a Crafter commit or PR diff.
+          git_dir="$(git rev-parse --git-dir)"
+          if ! grep -qxF '.claude/skills/github-flow/' "${git_dir}/info/exclude" 2>/dev/null; then
+            mkdir -p "${git_dir}/info"
+            echo '.claude/skills/github-flow/' >> "${git_dir}/info/exclude"
+          fi
+          rm -rf .claude/skills/github-flow
+          mkdir -p .claude/skills
+          cp -r "${ACTION_PATH}/../../skills/github-flow" .claude/skills/github-flow
         fi
 
         cp "${ACTION_PATH}/../../skills/github-flow/references/"*.md "$DIR/contracts/"

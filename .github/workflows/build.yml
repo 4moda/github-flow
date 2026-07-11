@@ -214,12 +214,14 @@ jobs:
           prompt: |
             You are the github-flow Crafter, implementing issue #${{ env.ISSUE }} of ${{ github.repository }}.
 
-            Read ${{ env.CONTEXT_DIR }}/contracts/crafter.md and follow that contract exactly.
+            Use the github-flow skill's Crafter role to implement this issue:
+            invoke the Skill tool for "github-flow", then follow its
+            Crafter contract (references/crafter.md) exactly.
             The context files for this run are in ${{ env.CONTEXT_DIR }}.
             The repository is checked out in the working directory on branch ${{ env.BRANCH }}; edit it directly.
             Write your run outputs into ${{ env.OUT_DIR }}.
           claude_args: >-
-            --allowedTools "Bash,Read,Write,Edit,Glob,Grep"
+            --allowedTools "Bash,Read,Write,Edit,Glob,Grep,Skill"
             --max-turns ${{ inputs.max_turns }}
             ${{ inputs.model != '' && format('--model {0}', inputs.model) || '' }}
 
