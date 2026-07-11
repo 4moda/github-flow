@@ -1,8 +1,9 @@
 name: github-flow route
 description: >-
-  Decide what a github-flow workflow should do with an issue when the `ai`
-  label is added. Wraps scripts/gf.py so shape.yml and build.yml share one
-  tested routing table and exactly one of them acts on any given issue.
+  Decide what a github-flow workflow should do with an issue when the
+  trigger label is added. Wraps scripts/gf.py so shape.yml and build.yml
+  share one tested routing table and exactly one of them acts on any given
+  issue.
 inputs:
   issue-number:
     description: Issue number in the current repository
@@ -12,10 +13,17 @@ inputs:
     required: true
   trigger:
     description: >-
-      Where the `ai` label was added: "issue" (default) or "pr" (the issue's
-      flow/issue-N pull request; build.yml then owns the acknowledge role)
+      Where the trigger label was added: "issue" (default) or "pr" (the
+      issue's flow/issue-N pull request; build.yml then owns the
+      acknowledge role)
     required: false
     default: "issue"
+  trigger-label:
+    description: >-
+      Name of the public trigger label; interpolated into human-facing
+      notes. Must not start with "flow/" (the state-label namespace).
+    required: false
+    default: "flow"
 outputs:
   action:
     description: shape | build | acknowledge | skip
@@ -40,10 +48,18 @@ runs:
         ISSUE: ${{ inputs.issue-number }}
         WORKFLOW: ${{ inputs.workflow }}
         TRIGGER: ${{ inputs.trigger }}
+        TRIGGER_LABEL: ${{ inputs.trigger-label }}
         ACTION_PATH: ${{ github.action_path }}
       run: |
         set -euo pipefail
+        case "$TRIGGER_LABEL" in
+          flow/*)
+            echo "ERROR: trigger-label must not start with 'flow/'" \
+              "(reserved for state labels), got: $TRIGGER_LABEL" >&2
+            exit 1 ;;
+        esac
         gh api "repos/${REPO}/issues/${ISSUE}" \
           | python3 "${ACTION_PATH}/../../scripts/gf.py" route \
-              --workflow "$WORKFLOW" --trigger "$TRIGGER" --format github \
+              --workflow "$WORKFLOW" --trigger "$TRIGGER" \
+              --trigger-label "$TRIGGER_LABEL" --format github \
           | tee -a "$GITHUB_OUTPUT"

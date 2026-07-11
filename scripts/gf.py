@@ -9,9 +9,10 @@ Subcommands:
   state   Print the issue's flow/* state label, or "none". Exits 2 when the
           issue carries more than one state label.
   ready   Print "true"/"false" for the "ready for implementation" checkbox.
-  route   Print what a workflow should do when `ai` is added to the issue.
-          --workflow is "shape" or "build"; --format github prints
-          GITHUB_OUTPUT-style key=value lines.
+  route   Print what a workflow should do when the trigger label is added
+          to the issue. --workflow is "shape" or "build"; --trigger-label
+          names the public trigger label (default "flow"); --format github
+          prints GITHUB_OUTPUT-style key=value lines.
 """
 
 from __future__ import annotations
@@ -76,15 +77,18 @@ def is_ready(issue: dict) -> bool:
     return bool(READY_RE.search(issue.get("body") or ""))
 
 
-def route(issue: dict, workflow: str, trigger: str = "issue") -> dict:
+def route(
+    issue: dict, workflow: str, trigger: str = "issue", trigger_label: str = "flow"
+) -> dict:
     """Decide what `workflow` (shape or build) should do with `issue`.
 
-    `trigger` is "issue" when `ai` was added to the issue itself, or "pr"
-    when it was added to the issue's pull request (the rework shortcut:
-    review the PR, then label the PR). PR triggers only reach build.yml, so
-    for them build.yml owns the acknowledge role; for issue triggers
-    shape.yml owns it. Either way, every `ai` trigger is answered exactly
-    once: for any issue, at most one workflow returns a non-"skip" action.
+    `trigger` is "issue" when the trigger label was added to the issue
+    itself, or "pr" when it was added to the issue's pull request (the
+    rework shortcut: review the PR, then label the PR). PR triggers only
+    reach build.yml, so for them build.yml owns the acknowledge role; for
+    issue triggers shape.yml owns it. Either way, every trigger is answered
+    exactly once: for any issue, at most one workflow returns a non-"skip"
+    action. `trigger_label` is only interpolated into human-facing notes.
 
     Returns {"action", "state", "note", "first_run"}.
     """
@@ -112,7 +116,7 @@ def route(issue: dict, workflow: str, trigger: str = "issue") -> dict:
             "invalid",
             "This issue carries multiple `flow/*` state labels "
             f"({', '.join(err.labels)}). Remove the extras so at most one "
-            "remains, then add `ai` again.",
+            f"remains, then add `{trigger_label}` again.",
         )
 
     if issue.get("state") == "closed":
@@ -155,7 +159,7 @@ def route(issue: dict, workflow: str, trigger: str = "issue") -> dict:
             ack,
             state,
             "A github-flow run is already in progress for this issue. "
-            "Wait for it to finish, then add `ai` again if needed.",
+            f"Wait for it to finish, then add `{trigger_label}` again if needed.",
         )
 
     if state == DONE:
@@ -177,7 +181,8 @@ def route(issue: dict, workflow: str, trigger: str = "issue") -> dict:
     return result(
         ack,
         state,
-        f"Unrecognized state label `{state}`. Remove it, then add `ai` again.",
+        f"Unrecognized state label `{state}`. Remove it, then add "
+        f"`{trigger_label}` again.",
     )
 
 
@@ -196,6 +201,7 @@ def main(argv: list[str] | None = None) -> int:
     route_p = sub.add_parser("route")
     route_p.add_argument("--workflow", choices=["shape", "build"], required=True)
     route_p.add_argument("--trigger", choices=["issue", "pr"], default="issue")
+    route_p.add_argument("--trigger-label", default="flow")
     route_p.add_argument("--format", choices=["json", "github"], default="json")
     args = parser.parse_args(argv)
 
@@ -210,7 +216,7 @@ def main(argv: list[str] | None = None) -> int:
     elif args.command == "ready":
         print("true" if is_ready(issue) else "false")
     elif args.command == "route":
-        res = route(issue, args.workflow, args.trigger)
+        res = route(issue, args.workflow, args.trigger, args.trigger_label)
         if args.format == "github":
             _print_github_output(res, sys.stdout)
         else:

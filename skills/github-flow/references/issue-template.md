@@ -52,7 +52,7 @@ diff.>
   implementation` — `build.yml` detects approval by matching a checked
   checkbox against that phrase (case-insensitive, `-` or `*` bullets).
 - The Composer always emits the checkbox **unticked**; only humans tick it.
-- Humans may edit any section after shaping. Editing plus re-adding `ai`
+- Humans may edit any section after shaping. Editing plus re-adding `flow`
   while the box is unticked re-runs the Composer on the edited body.
 - The `Original request` block is written once, at first shaping, and then
   preserved verbatim by later re-shapes.

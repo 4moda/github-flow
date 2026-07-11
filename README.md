@@ -4,7 +4,7 @@
 
 Issue-driven AI development for GitHub, shared across repositories.
 
-Humans steer with **one label and one checkbox**: add `ai` to an issue to
+Humans steer with **one label and one checkbox**: add `flow` to an issue to
 run the next automated step; tick `ready for implementation` to approve
 implementation. Claude runs inside GitHub Actions — the **Composer** shapes
 raw issues into implementable specs, the **Crafter** implements approved
@@ -14,18 +14,18 @@ issues as pull requests. **Merging is always a human action.** Internal
 ```mermaid
 stateDiagram-v2
     [*] --> Raw : issue created
-    Raw --> Shaping : + ai
+    Raw --> Shaping : + flow
     Shaping --> AwaitingApproval : shaped
     Shaping --> Split : too large, sub-issues created
     Split --> [*]
     Shaping --> BlockedShape : needs input
-    BlockedShape --> Shaping : answer + ai
-    AwaitingApproval --> Shaping : + ai (box unticked)
-    AwaitingApproval --> Building : box ticked + ai
+    BlockedShape --> Shaping : answer + flow
+    AwaitingApproval --> Shaping : + flow (box unticked)
+    AwaitingApproval --> Building : box ticked + flow
     Building --> PrOpen : PR opened/updated
     Building --> BlockedBuild : needs input
-    BlockedBuild --> Building : answer + ai
-    PrOpen --> Building : rework + ai
+    BlockedBuild --> Building : answer + flow
+    PrOpen --> Building : rework + flow
     PrOpen --> Done : human merges
     PrOpen --> BlockedBuild : PR closed unmerged
     Done --> [*]
@@ -44,7 +44,7 @@ AI is invoked in **exactly two steps**:
 2. the Crafter step of `build.yml` (edit the working tree).
 
 Everything else is deterministic scripting with `gh` and a unit-tested
-Python module (`scripts/gf.py`): routing `ai` triggers by state label,
+Python module (`scripts/gf.py`): routing `flow` triggers by state label,
 parsing the approval checkbox, creating sub-issues, committing/pushing and
 opening PRs, and mirroring merge/close/review outcomes back to issues
 (`sync-pr.yml` contains no AI at all). The agents themselves never call the
@@ -96,7 +96,7 @@ apply mechanically, so every state transition is explainable from logs.
 | `actions/build-context` | collect issue/PR/repo context for agent runs |
 | `actions/update-issue` | the only writer of `flow/*` labels, bodies, comments |
 | `scripts/gf.py` | tested decision logic (state, ready checkbox, routing) |
-| `scripts/setup-labels.sh` | create the `ai` + `flow/*` labels in a consumer repo |
+| `scripts/setup-labels.sh` | create the `flow` + `flow/*` labels in a consumer repo |
 | `skills/github-flow/` | skill document and agent contracts |
 | `tests/` | unit tests for `gf.py` |
 
@@ -117,16 +117,18 @@ CI runs all four on every push and pull request.
 
 ## Releasing
 
-Consumers pin `@v1`, and the workflows' internal action references also use
-`@v1`, so a release is: tag an exact version, then move the major tag to the
-same commit.
+Consumers pin a major tag (`@v2`, the current line), and the workflows'
+internal action references use the same tag, so a release is: tag an exact
+version, then move the major tag to the same commit.
 
 ```bash
-git tag -a v1.1.0 -m "v1.1.0"
-git tag -f v1 v1.1.0
-git push origin v1.1.0
-git push -f origin v1
+git tag -a v2.1.0 -m "v2.1.0"
+git tag -f v2 v2.1.0
+git push origin v2.1.0
+git push -f origin v2
 ```
 
 Breaking changes (label names, result.json schema, wrapper inputs/secrets)
-get a new major tag (`v2`) instead of moving `v1`.
+get a new major tag instead of moving the current one. History: `v1`
+(frozen at v1.3.0) used `ai` as the trigger label; `v2` renamed it to
+`flow` and made it configurable.

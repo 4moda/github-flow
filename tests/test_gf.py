@@ -33,7 +33,7 @@ class DetectStateTest(unittest.TestCase):
         self.assertEqual(gf.detect_state(issue()), "none")
 
     def test_non_state_labels_ignored(self):
-        self.assertEqual(gf.detect_state(issue(labels=["bug", "ai"])), "none")
+        self.assertEqual(gf.detect_state(issue(labels=["bug", "flow"])), "none")
 
     def test_single_state_label(self):
         self.assertEqual(
@@ -179,10 +179,28 @@ class RouteTest(unittest.TestCase):
                 res = gf.route(issue(labels=labels), workflow)
                 self.assertNotIn("\n", res["note"])
 
+    def test_notes_name_the_default_trigger_label(self):
+        res = gf.route(issue(labels=["flow/shaping"]), "shape")
+        self.assertIn("`flow`", res["note"])
+
+    def test_notes_name_a_custom_trigger_label(self):
+        for labels in (["flow/shaping"], ["flow/bogus"], ["flow/a", "flow/b"]):
+            with self.subTest(labels=labels):
+                res = gf.route(issue(labels=labels), "shape", trigger_label="run-ai")
+                self.assertIn("`run-ai`", res["note"])
+                self.assertNotIn("`flow`", res["note"])
+
+    def test_bare_trigger_label_is_not_a_state(self):
+        # the default trigger label `flow` must not match the `flow/` state
+        # namespace prefix
+        self.assertEqual(gf.detect_state(issue(labels=["flow"])), "none")
+        res = gf.route(issue(labels=["flow"]), "shape")
+        self.assertEqual(res["action"], "shape")
+
 
 class PrTriggerRouteTest(unittest.TestCase):
-    """`ai` added to a flow/issue-N pull request routes only through build.yml,
-    which then owns the acknowledge role."""
+    """The trigger label added to a flow/issue-N pull request routes only
+    through build.yml, which then owns the acknowledge role."""
 
     def route_pr(self, payload):
         return gf.route(payload, "build", trigger="pr")

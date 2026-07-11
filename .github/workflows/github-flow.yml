@@ -1,11 +1,11 @@
 # Dogfood wrapper: run github-flow on this repository itself.
 #
 # Other repositories should reference the reusable workflows by tag
-# (uses: 4moda/github-flow/.github/workflows/shape.yml@v1 — see
+# (uses: 4moda/github-flow/.github/workflows/shape.yml@v2 — see
 # docs/adopting.md). This repo uses the local `./` form instead, so main
 # always exercises the latest workflow logic. Note the composite actions
-# inside those workflows still resolve at @v1, so action changes take
-# effect here only after the v1 tag moves.
+# inside those workflows still resolve at @v2, so action changes take
+# effect here only after the v2 tag moves.
 name: github-flow
 
 on:
@@ -17,8 +17,10 @@ on:
     types: [submitted]
 
 jobs:
+  # the label name below must match the workflows' trigger_label input
+  # (default "flow")
   shape:
-    if: github.event_name == 'issues' && github.event.label.name == 'ai'
+    if: github.event_name == 'issues' && github.event.label.name == 'flow'
     uses: ./.github/workflows/shape.yml
     permissions:
       contents: read
@@ -31,8 +33,8 @@ jobs:
       claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
 
   build:
-    # fires for `ai` on an issue AND for `ai` on a flow/issue-N pull request
-    if: github.event.label.name == 'ai'
+    # fires for `flow` on an issue AND on a flow/issue-N pull request
+    if: github.event.label.name == 'flow'
     uses: ./.github/workflows/build.yml
     permissions:
       contents: write

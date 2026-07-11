@@ -9,7 +9,15 @@
 name: github-flow / sync-pr
 
 on:
-  workflow_call: {}
+  workflow_call:
+    inputs:
+      trigger_label:
+        description: >-
+          Name of the public trigger label; interpolated into guidance
+          comments and removed on terminal transitions.
+        type: string
+        required: false
+        default: "flow"
 
 jobs:
   sync:
@@ -49,11 +57,12 @@ jobs:
           github.event_name == 'pull_request' &&
           github.event.action == 'closed' &&
           github.event.pull_request.merged == true
-        uses: 4moda/github-flow/actions/update-issue@v1
+        uses: 4moda/github-flow/actions/update-issue@v2
         with:
           issue-number: ${{ steps.issue.outputs.number }}
           state: flow/done
-          remove-ai: "true"
+          remove-trigger: "true"
+          trigger-label: ${{ inputs.trigger_label }}
           comment: >-
             **github-flow** — PR #${{ github.event.pull_request.number }}
             was merged. Flow complete.
@@ -64,23 +73,24 @@ jobs:
           github.event_name == 'pull_request' &&
           github.event.action == 'closed' &&
           github.event.pull_request.merged == false
-        uses: 4moda/github-flow/actions/update-issue@v1
+        uses: 4moda/github-flow/actions/update-issue@v2
         with:
           issue-number: ${{ steps.issue.outputs.number }}
           state: flow/blocked-build
-          remove-ai: "true"
+          remove-trigger: "true"
+          trigger-label: ${{ inputs.trigger_label }}
           comment: >-
             **github-flow** — PR #${{ github.event.pull_request.number }}
             was closed without merging. Update the issue with what should
-            happen instead and add the `ai` label to rebuild, or close this
-            issue if the work is no longer needed.
+            happen instead and add the `${{ inputs.trigger_label }}` label
+            to rebuild, or close this issue if the work is no longer needed.
 
       - name: PR reopened — mark issue pr-open
         if: >-
           steps.issue.outputs.number != '' &&
           github.event_name == 'pull_request' &&
           github.event.action == 'reopened'
-        uses: 4moda/github-flow/actions/update-issue@v1
+        uses: 4moda/github-flow/actions/update-issue@v2
         with:
           issue-number: ${{ steps.issue.outputs.number }}
           state: flow/pr-open
@@ -93,11 +103,11 @@ jobs:
           steps.issue.outputs.number != '' &&
           github.event_name == 'pull_request_review' &&
           github.event.review.state == 'changes_requested'
-        uses: 4moda/github-flow/actions/update-issue@v1
+        uses: 4moda/github-flow/actions/update-issue@v2
         with:
           issue-number: ${{ steps.issue.outputs.number }}
           comment: >-
             **github-flow** — a review on PR
             #${{ github.event.pull_request.number }} requested changes. Add
-            the `ai` label to the PR (or to this issue) to have the Crafter
-            address the review feedback.
+            the `${{ inputs.trigger_label }}` label to the PR (or to this
+            issue) to have the Crafter address the review feedback.

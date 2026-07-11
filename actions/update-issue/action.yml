@@ -1,9 +1,9 @@
 name: github-flow update-issue
 description: >-
   Apply a github-flow transition to an issue: swap the flow/* state label,
-  optionally replace the body, post a comment, and remove the public `ai`
-  trigger label. All flow/* label writes go through this action so an issue
-  always ends up with at most one state label.
+  optionally replace the body, post a comment, and remove the public
+  trigger label. All flow/* label writes go through this action so an
+  issue always ends up with at most one state label.
 inputs:
   issue-number:
     description: Issue number in the current repository
@@ -24,10 +24,14 @@ inputs:
     description: File whose content is posted as a comment (wins over `comment`)
     required: false
     default: ""
-  remove-ai:
-    description: Set "true" to remove the public `ai` trigger label
+  remove-trigger:
+    description: Set "true" to remove the public trigger label
     required: false
     default: "false"
+  trigger-label:
+    description: Name of the public trigger label to remove
+    required: false
+    default: "flow"
 runs:
   using: composite
   steps:
@@ -40,7 +44,8 @@ runs:
         BODY_FILE: ${{ inputs.body-file }}
         COMMENT: ${{ inputs.comment }}
         COMMENT_FILE: ${{ inputs.comment-file }}
-        REMOVE_AI: ${{ inputs.remove-ai }}
+        REMOVE_TRIGGER: ${{ inputs.remove-trigger }}
+        TRIGGER_LABEL: ${{ inputs.trigger-label }}
       run: |
         set -euo pipefail
 
@@ -85,7 +90,8 @@ runs:
             -f body="$COMMENT" >/dev/null
         fi
 
-        if [ "$REMOVE_AI" = "true" ]; then
-          gh api -X DELETE "repos/${REPO}/issues/${ISSUE}/labels/ai" \
+        if [ "$REMOVE_TRIGGER" = "true" ]; then
+          encoded="$(jq -rn --arg l "$TRIGGER_LABEL" '$l | @uri')"
+          gh api -X DELETE "repos/${REPO}/issues/${ISSUE}/labels/${encoded}" \
             >/dev/null 2>&1 || true
         fi
