@@ -98,6 +98,13 @@ default. Valid model ids are listed in the
 [Anthropic models overview](https://docs.claude.com/en/docs/about-claude/models)
 (e.g. `claude-opus-4-8`, `claude-sonnet-5`, `claude-haiku-4-5-20251001`).
 
+Runaway guards: every agent run is bounded twice — by agent turns
+(`--max-turns`, tunable via `with: { max_turns: N }`; defaults 50 for the
+Composer, 150 for the Crafter) and by wall-clock job timeouts (30 min shape,
+90 min build). Exceeding either fails the run, which lands the issue in the
+matching `flow/blocked-*` state with a run-log link; add `ai` to retry.
+Lower `max_turns` to cap API spend per run.
+
 ## First run
 
 1. Open an issue describing what you want, in your own words.

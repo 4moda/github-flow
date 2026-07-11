@@ -15,6 +15,13 @@ on:
         type: string
         required: false
         default: ""
+      max_turns:
+        description: >-
+          Upper bound on Composer agent turns; the run fails (and the issue
+          lands in flow/blocked-shape) when exceeded
+        type: number
+        required: false
+        default: 50
     secrets:
       anthropic_api_key:
         description: Anthropic API key (or provide claude_code_oauth_token)
@@ -30,6 +37,7 @@ jobs:
       github.event.action == 'labeled' &&
       github.event.label.name == 'ai'
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     permissions:
       issues: read
     outputs:
@@ -49,6 +57,7 @@ jobs:
     needs: route
     if: needs.route.outputs.action == 'acknowledge'
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     permissions:
       issues: write
     steps:
@@ -69,6 +78,7 @@ jobs:
     needs: route
     if: needs.route.outputs.action == 'shape'
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     # job-level on purpose: workflow-level concurrency is unreliable in
     # called reusable workflows. Shared group with build.yml serializes all
     # agent runs per issue.
@@ -124,6 +134,7 @@ jobs:
             Write your outputs into ${{ env.OUT_DIR }}.
           claude_args: >-
             --allowedTools "Read,Glob,Grep,Write"
+            --max-turns ${{ inputs.max_turns }}
             ${{ inputs.model != '' && format('--model {0}', inputs.model) || '' }}
 
       - name: Read Composer result

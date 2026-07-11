@@ -23,6 +23,13 @@ on:
         type: string
         required: false
         default: ""
+      max_turns:
+        description: >-
+          Upper bound on Crafter agent turns; the run fails (and the issue
+          lands in flow/blocked-build) when exceeded
+        type: number
+        required: false
+        default: 150
     secrets:
       anthropic_api_key:
         description: Anthropic API key (or provide claude_code_oauth_token)
@@ -46,6 +53,7 @@ jobs:
        (github.event_name == 'pull_request' &&
         startsWith(github.event.pull_request.head.ref, 'flow/issue-')))
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     permissions:
       issues: read
     outputs:
@@ -94,6 +102,7 @@ jobs:
     needs: route
     if: needs.route.outputs.action == 'acknowledge'
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     permissions:
       issues: write
     steps:
@@ -114,6 +123,7 @@ jobs:
     needs: route
     if: needs.route.outputs.action == 'build'
     runs-on: ubuntu-latest
+    timeout-minutes: 90
     # job-level on purpose: workflow-level concurrency is unreliable in
     # called reusable workflows. Shared group with shape.yml serializes all
     # agent runs per issue, whichever surface triggered them.
@@ -196,6 +206,7 @@ jobs:
             Write your run outputs into ${{ env.OUT_DIR }}.
           claude_args: >-
             --allowedTools "Bash,Read,Write,Edit,Glob,Grep"
+            --max-turns ${{ inputs.max_turns }}
             ${{ inputs.model != '' && format('--model {0}', inputs.model) || '' }}
 
       - name: Read Crafter result
