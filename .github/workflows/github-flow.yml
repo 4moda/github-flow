@@ -1,0 +1,56 @@
+# Dogfood wrapper: run github-flow on this repository itself.
+#
+# Other repositories should reference the reusable workflows by tag
+# (uses: 4moda/github-flow/.github/workflows/shape.yml@v1 — see
+# docs/adopting.md). This repo uses the local `./` form instead, so main
+# always exercises the latest workflow logic. Note the composite actions
+# inside those workflows still resolve at @v1, so action changes take
+# effect here only after the v1 tag moves.
+name: github-flow
+
+on:
+  issues:
+    types: [labeled]
+  pull_request:
+    types: [labeled, closed, reopened]
+  pull_request_review:
+    types: [submitted]
+
+jobs:
+  shape:
+    if: github.event_name == 'issues' && github.event.label.name == 'ai'
+    uses: ./.github/workflows/shape.yml
+    permissions:
+      contents: read
+      issues: write
+    with:
+      model: claude-sonnet-5
+      max_turns: 15
+    secrets:
+      anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+      claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+
+  build:
+    # fires for `ai` on an issue AND for `ai` on a flow/issue-N pull request
+    if: github.event.label.name == 'ai'
+    uses: ./.github/workflows/build.yml
+    permissions:
+      contents: write
+      issues: write
+      pull-requests: write
+    with:
+      model: claude-sonnet-5
+      max_turns: 25
+    secrets:
+      anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+      claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+      bot_token: ${{ secrets.GF_BOT_TOKEN }}
+
+  sync-pr:
+    if: >-
+      github.event_name == 'pull_request_review' ||
+      (github.event_name == 'pull_request' && github.event.action != 'labeled')
+    uses: ./.github/workflows/sync-pr.yml
+    permissions:
+      issues: write
+      pull-requests: read
