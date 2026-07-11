@@ -69,6 +69,16 @@ runs:
               break
             fi
           done
+          # the repository's PR template, for the Crafter's PR summary
+          # (GitHub only auto-applies it to web-UI PRs, not API-created ones)
+          for f in .github/PULL_REQUEST_TEMPLATE.md .github/pull_request_template.md \
+                   PULL_REQUEST_TEMPLATE.md pull_request_template.md \
+                   docs/PULL_REQUEST_TEMPLATE.md docs/pull_request_template.md; do
+            if [ -f "$f" ]; then
+              cp "$f" "$DIR/pr-template.md"
+              break
+            fi
+          done
         fi
 
         cp "${ACTION_PATH}/../../skills/github-flow/references/"*.md "$DIR/contracts/"

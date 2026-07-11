@@ -21,6 +21,7 @@ The run prompt names a context directory and an output directory.
 | `pr-comments.json` | PR conversation comments |
 | `tree.txt` | `git ls-files` of the repository |
 | `readme-excerpt.md` | beginning of the repository README, when present |
+| `pr-template.md` | the repository's own PR template, when present — structure your summary with it |
 | `contracts/` | this contract, `composer.md`, `issue-template.md`, `concepts.md` |
 
 The repository is checked out in the working directory on the issue's
@@ -74,7 +75,12 @@ Write into the output directory named in the prompt.
 ```
 
 The summary becomes the PR body (first run) or a PR comment (rework), so
-write it for the human reviewer.
+write it for the human reviewer. When the context contains
+`pr-template.md` (the repository's own PR template), fill that template in
+as the summary: keep its headings, drop placeholder comments, and omit
+sections that don't apply. Do not add a closing keyword (`Closes #N`) or
+an issue reference section yourself — the workflow appends those
+mechanically.
 
 ## Hard rules
 

@@ -173,6 +173,12 @@ Only the `ai` label and the `ready for implementation` checkbox. All
   the PR instead. (The Crafter already runs the repository's tests inside
   its own run and reports the results in the PR text.) Remember that
   without `GF_BOT_TOKEN`, CI does not fire on Crafter PRs at all.
+- If the consumer repository has a `PULL_REQUEST_TEMPLATE.md` (in
+  `.github/`, the root, or `docs/`), the Crafter fills it in as the PR
+  body. GitHub itself only applies PR templates to web-UI PRs, so
+  github-flow replicates that for its API-created PRs; the closing
+  keyword (`Closes #N`) and attribution footer are appended automatically
+  either way.
 - Ordinary issue/PR conversation comments never trigger anything by
   themselves — runs start only from the `ai` label (plus PR
   close/reopen/review-submit events for the mechanical sync).
