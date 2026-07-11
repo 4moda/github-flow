@@ -3,10 +3,11 @@ description: >-
   Collect everything a github-flow agent run needs into a context directory:
   issue payload, body and conversation, current flow/* state, ready-checkbox
   state, linked PR with its review feedback, a repository tree summary, and
-  the agent contracts. Also places the github-flow skill into the checked
-  out working tree (.claude/skills/github-flow/) so Claude Code's own Agent
-  Skills detection picks it up. The target repository must already be
-  checked out in the workspace.
+  the agent contracts. Also places skills declared in this repository's
+  apm.yml (see https://github.com/microsoft/apm) at Claude Code's personal
+  skill directory (~/.claude/skills/github-flow/), so Claude Code's own
+  Agent Skills detection picks it up. The target repository must already
+  be checked out in the workspace.
 inputs:
   issue-number:
     description: Issue number in the current repository
@@ -81,20 +82,35 @@ runs:
               break
             fi
           done
+        fi
 
-          # Place the skill where Claude Code's own Agent Skills detection
-          # looks for it, so the Composer/Crafter prompts can invoke it by
-          # name via the Skill tool instead of being told an exact file
-          # path to Read. Excluded locally (not committed, not .gitignore)
-          # so it never leaks into a Crafter commit or PR diff.
-          git_dir="$(git rev-parse --git-dir)"
-          if ! grep -qxF '.claude/skills/github-flow/' "${git_dir}/info/exclude" 2>/dev/null; then
-            mkdir -p "${git_dir}/info"
-            echo '.claude/skills/github-flow/' >> "${git_dir}/info/exclude"
-          fi
-          rm -rf .claude/skills/github-flow
-          mkdir -p .claude/skills
-          cp -r "${ACTION_PATH}/../../skills/github-flow" .claude/skills/github-flow
+        # Place skills declared in this repository's apm.yml (see
+        # https://github.com/microsoft/apm) at Claude Code's *personal*
+        # skill directory, ~/.claude/skills/ -- not the target
+        # repository's working tree. Personal skills are a documented
+        # Claude Code mechanism (alongside project-level .claude/skills/)
+        # and $HOME here is never part of any git working tree, so there
+        # is nothing to exclude and nothing that can leak into a Crafter
+        # commit or PR diff -- a structural guarantee, not one we have to
+        # remember to maintain. Deployment is still redirected to a
+        # scratch dir first (--root) so apm's own bookkeeping
+        # (apm_modules/, apm.lock.yaml, its own .gitignore) doesn't end
+        # up anywhere either; only .claude/skills/ is copied out of it.
+        apm_bin_dir="${RUNNER_TEMP}/apm-bin"
+        if ! command -v apm >/dev/null 2>&1; then
+          mkdir -p "$apm_bin_dir"
+          curl -sSL https://aka.ms/apm-unix \
+            | VERSION=v0.24.1 APM_INSTALL_DIR="$apm_bin_dir" sh >/dev/null
+          export PATH="${apm_bin_dir}:${PATH}"
+        fi
+
+        apm_scratch="${RUNNER_TEMP}/apm-scratch"
+        rm -rf "$apm_scratch"
+        (cd "${ACTION_PATH}/../.." && apm install --target claude --root "$apm_scratch")
+
+        if [ -d "${apm_scratch}/.claude/skills" ]; then
+          mkdir -p "${HOME}/.claude"
+          cp -r "${apm_scratch}/.claude/skills" "${HOME}/.claude/skills"
         fi
 
         cp "${ACTION_PATH}/../../skills/github-flow/references/"*.md "$DIR/contracts/"
