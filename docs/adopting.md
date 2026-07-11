@@ -1,5 +1,7 @@
 # Adopting github-flow in a repository
 
+[English](adopting.md) | [日本語](adopting.ja.md)
+
 Three one-time steps: allow Actions to create PRs, add a credential, and
 create the labels — then drop in one wrapper workflow.
 

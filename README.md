@@ -1,5 +1,7 @@
 # github-flow
 
+[English](README.md) | [日本語](README.ja.md)
+
 [![ci](https://github.com/4moda/github-flow/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/4moda/github-flow/actions/workflows/ci.yml)
 
 Issue-driven AI development for GitHub, shared across repositories.
