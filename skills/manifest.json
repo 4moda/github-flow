@@ -1,0 +1,14 @@
+{
+  "skills": [
+    {
+      "name": "github-flow",
+      "source": "github-flow",
+      "targets": [
+        {
+          "tool": "claude-code",
+          "path": ".claude/skills/github-flow"
+        }
+      ]
+    }
+  ]
+}
