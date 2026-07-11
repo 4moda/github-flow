@@ -6,6 +6,5 @@ target-version = "py311"
 select = ["E", "F", "W", "I", "UP", "B"]
 
 [tool.ruff.lint.per-file-ignores]
-# tests import gf/apm after a sys.path tweak
+# tests import gf after a sys.path tweak
 "tests/test_gf.py" = ["E402"]
-"tests/test_apm.py" = ["E402"]

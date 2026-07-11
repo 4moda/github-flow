@@ -3,10 +3,11 @@ description: >-
   Collect everything a github-flow agent run needs into a context directory:
   issue payload, body and conversation, current flow/* state, ready-checkbox
   state, linked PR with its review feedback, a repository tree summary, and
-  the agent contracts. Also places skills into the checked out working tree
-  per skills/manifest.json (github-flow -> .claude/skills/github-flow/, so
-  Claude Code's own Agent Skills detection picks it up). The target
-  repository must already be checked out in the workspace.
+  the agent contracts. Also places skills declared in this repository's
+  apm.yml (see https://github.com/microsoft/apm) into the checked out
+  working tree -- github-flow -> .claude/skills/github-flow/, so Claude
+  Code's own Agent Skills detection picks it up. The target repository
+  must already be checked out in the workspace.
 inputs:
   issue-number:
     description: Issue number in the current repository
@@ -82,15 +83,42 @@ runs:
             fi
           done
 
-          # Place skills where each target tool's own detection looks for
-          # them (manifest-driven — see scripts/apm.py), so the
-          # Composer/Crafter prompts can invoke the skill by name via the
-          # Skill tool instead of being told an exact file path to Read.
-          # apm.py records each destination in .git/info/exclude (not
-          # .gitignore) so placed files never leak into a Crafter commit.
-          python3 "${ACTION_PATH}/../../scripts/apm.py" place \
-            --manifest "${ACTION_PATH}/../../skills/manifest.json" \
-            --target-root "$(pwd)" --tool claude-code
+          # Place skills declared in this repository's apm.yml (see
+          # https://github.com/microsoft/apm), so the Composer/Crafter
+          # prompts can invoke the skill by name via the Skill tool
+          # instead of being told an exact file path to Read.
+          #
+          # Deployment is redirected to a scratch dir (--root) so nothing
+          # apm itself writes (apm_modules/, apm.lock.yaml, its own
+          # .gitignore) touches this working tree; only the resulting
+          # .claude/skills/*/ trees are copied in below, then recorded in
+          # .git/info/exclude (not .gitignore) so they never leak into a
+          # Crafter commit or PR diff.
+          apm_bin_dir="${RUNNER_TEMP}/apm-bin"
+          if ! command -v apm >/dev/null 2>&1; then
+            mkdir -p "$apm_bin_dir"
+            curl -sSL https://aka.ms/apm-unix \
+              | VERSION=v0.24.1 APM_INSTALL_DIR="$apm_bin_dir" sh >/dev/null
+            export PATH="${apm_bin_dir}:${PATH}"
+          fi
+
+          apm_scratch="${RUNNER_TEMP}/apm-scratch"
+          rm -rf "$apm_scratch"
+          (cd "${ACTION_PATH}/../.." && apm install --target claude --root "$apm_scratch")
+
+          if [ -d "${apm_scratch}/.claude/skills" ]; then
+            git_dir="$(git rev-parse --git-dir)"
+            mkdir -p .claude/skills "${git_dir}/info"
+            for skill_dir in "${apm_scratch}/.claude/skills/"*/; do
+              skill_name="$(basename "$skill_dir")"
+              rm -rf ".claude/skills/${skill_name}"
+              cp -r "$skill_dir" ".claude/skills/${skill_name}"
+              entry=".claude/skills/${skill_name}/"
+              if ! grep -qxF "$entry" "${git_dir}/info/exclude" 2>/dev/null; then
+                echo "$entry" >> "${git_dir}/info/exclude"
+              fi
+            done
+          fi
         fi
 
         cp "${ACTION_PATH}/../../skills/github-flow/references/"*.md "$DIR/contracts/"
