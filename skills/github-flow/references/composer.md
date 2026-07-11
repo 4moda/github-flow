@@ -43,6 +43,25 @@ Rewrite the issue body into the template defined in
      run, keep it as-is; do not re-wrap or nest it.
    - Include the **AI Ready** section with the checkbox **unticked**.
 
+## When to split
+
+If the request is too large for a single reviewable pull request — it
+contains multiple independently mergeable deliverables, or the acceptance
+criteria would span several unrelated areas — report `split` instead of
+`shaped`:
+
+- Propose **2 to 8 sub-issues**, each small enough for one PR. Prefer the
+  smallest number that gives independently reviewable units; when in doubt,
+  don't split.
+- Write each sub-issue body in the full shaped template (checkbox
+  unticked). The `Original request` block may simply say
+  "Split from the parent issue." Cross-reference sibling sub-issues by
+  title in the **Dependencies** section — their numbers don't exist yet.
+- Write `issue-body.md` as the **parent overview**: Background, Problem,
+  and the split rationale. Do **not** include the "AI Ready" checkbox — the
+  parent becomes a tracking issue and is never implemented directly. The
+  workflow appends the sub-issue checklist after creating them.
+
 ## When to report blocked
 
 Report `blocked` instead of guessing when:
@@ -66,13 +85,18 @@ Write into the output directory named in the prompt.
 
 ```json
 {
-  "outcome": "shaped" | "blocked",
-  "note": "shaped: one-paragraph summary of what changed. blocked: the concrete questions or missing input (markdown allowed)."
+  "outcome": "shaped" | "blocked" | "split",
+  "note": "shaped/split: one-paragraph summary. blocked: the concrete questions or missing input (markdown allowed).",
+  "issues": [{"title": "...", "body": "..."}]
 }
 ```
 
-`issue-body.md` — required when `outcome` is `shaped`: the complete
-replacement issue body, following the template.
+`issues` is required only for `split` (2–8 entries, each a full shaped
+template body).
+
+`issue-body.md` — required when `outcome` is `shaped` (the complete
+replacement issue body, following the template) or `split` (the parent
+overview, without the AI Ready checkbox).
 
 ## Hard rules
 

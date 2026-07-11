@@ -44,7 +44,7 @@ on:
   issues:
     types: [labeled]
   pull_request:
-    types: [closed, reopened]
+    types: [labeled, closed, reopened]
   pull_request_review:
     types: [submitted]
 
@@ -60,7 +60,8 @@ jobs:
       claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
 
   build:
-    if: github.event_name == 'issues' && github.event.label.name == 'ai'
+    # fires for `ai` on an issue AND for `ai` on a flow/issue-N pull request
+    if: github.event.label.name == 'ai'
     uses: 4moda/github-flow/.github/workflows/build.yml@v1
     permissions:
       contents: write
@@ -72,7 +73,9 @@ jobs:
       bot_token: ${{ secrets.GF_BOT_TOKEN }}
 
   sync-pr:
-    if: github.event_name == 'pull_request' || github.event_name == 'pull_request_review'
+    if: >-
+      github.event_name == 'pull_request_review' ||
+      (github.event_name == 'pull_request' && github.event.action != 'labeled')
     uses: 4moda/github-flow/.github/workflows/sync-pr.yml@v1
     permissions:
       issues: write
@@ -90,7 +93,10 @@ same tag, so everything stays in lockstep. Pin an exact release (e.g.
 unreleased changes.
 
 To override the model, pass `with: { model: claude-opus-4-8 }` (or another
-model id) to `shape` and `build`.
+model id) to `shape` and `build`. Omitting it uses claude-code-action's
+default. Valid model ids are listed in the
+[Anthropic models overview](https://docs.claude.com/en/docs/about-claude/models)
+(e.g. `claude-opus-4-8`, `claude-sonnet-5`, `claude-haiku-4-5-20251001`).
 
 ## First run
 
@@ -102,12 +108,19 @@ model id) to `shape` and `build`.
 4. The Crafter pushes branch `flow/issue-<n>` and opens a PR that closes the
    issue. Review it.
    - Merge when satisfied — the issue closes and is marked `flow/done`.
-   - Or request changes in a PR review and add `ai` on the issue to have
-     the Crafter rework the same PR.
+   - Or request changes: leave a PR review (or comments) describing what to
+     change, then **add `ai` to the PR itself** — the Crafter reworks the
+     same branch and PR with your feedback in context. Adding `ai` to the
+     issue instead is equivalent.
 
 If a run gets blocked, the issue gets a `flow/blocked-*` label and a comment
 listing exactly what is missing. Answer in the issue and add `ai` to
 resume.
+
+If an issue is too large for one PR, the Composer splits it: sub-issues are
+created already shaped (`flow/awaiting-approval`), the original becomes a
+`flow/split` tracking issue with a checklist, and you approve and trigger
+each sub-issue individually.
 
 ## What humans manage
 
@@ -127,3 +140,14 @@ Only the `ai` label and the `ready for implementation` checkbox. All
 - The `flow/*` label namespace and `flow/issue-*` branch namespace are
   reserved for github-flow — don't create your own labels or branches with
   those prefixes in a consumer repository.
+- The build run does **not** wait for the PR's own CI: merge is a human
+  decision, so gate it with branch protection / required status checks on
+  the PR instead. (The Crafter already runs the repository's tests inside
+  its own run and reports the results in the PR text.) Remember that
+  without `GF_BOT_TOKEN`, CI does not fire on Crafter PRs at all.
+- Ordinary issue/PR conversation comments never trigger anything by
+  themselves — runs start only from the `ai` label (plus PR
+  close/reopen/review-submit events for the mechanical sync).
+- Security model — whose tokens are used, what leaves GitHub, why the
+  agents can't push or merge: see the
+  [README](../README.md#security-model).

@@ -14,6 +14,8 @@ stateDiagram-v2
     [*] --> Raw : issue created
     Raw --> Shaping : + ai
     Shaping --> AwaitingApproval : shaped
+    Shaping --> Split : too large, sub-issues created
+    Split --> [*]
     Shaping --> BlockedShape : needs input
     BlockedShape --> Shaping : answer + ai
     AwaitingApproval --> Shaping : + ai (box unticked)
@@ -31,6 +33,44 @@ stateDiagram-v2
 
 One wrapper workflow, one credential, one label-setup run. See
 [docs/adopting.md](docs/adopting.md).
+
+## Where AI runs — and where it doesn't
+
+AI is invoked in **exactly two steps**:
+
+1. the Composer step of `shape.yml` (rewrite/split an issue), and
+2. the Crafter step of `build.yml` (edit the working tree).
+
+Everything else is deterministic scripting with `gh` and a unit-tested
+Python module (`scripts/gf.py`): routing `ai` triggers by state label,
+parsing the approval checkbox, creating sub-issues, committing/pushing and
+opening PRs, and mirroring merge/close/review outcomes back to issues
+(`sync-pr.yml` contains no AI at all). The agents themselves never call the
+GitHub API — they only write result files that the workflows validate and
+apply mechanically, so every state transition is explainable from logs.
+
+## Security model
+
+- **Credentials are the consumer's own.** Each consuming repository
+  provides its own `ANTHROPIC_API_KEY` or `CLAUDE_CODE_OAUTH_TOKEN` as a
+  GitHub Actions secret. This repository ships code only — it never
+  receives, stores, or proxies anyone's tokens.
+- **The Claude credential is sent to the Anthropic API and nowhere else.**
+  It is consumed by [`anthropics/claude-code-action`](https://github.com/anthropics/claude-code-action)
+  running on the consumer repository's own runner. The mechanical steps
+  talk only to `github.com` with the run's `GITHUB_TOKEN`. GitHub masks
+  secrets in logs.
+- **`GITHUB_TOKEN` is ephemeral and least-privilege.** It expires when the
+  job ends, and the wrapper workflow declares the minimum `permissions`
+  per job (shape never gets `contents: write`; sync-pr never gets code
+  access).
+- **What leaves GitHub:** during the two AI steps, repository content and
+  issue/PR text are sent to the Anthropic API as model context — that is
+  inherent to running Claude. Nothing is sent anywhere during the
+  mechanical steps.
+- **Blast radius is bounded by design**: agents cannot push, merge, or
+  label; the workflows do, deterministically, and merging is always left
+  to a human.
 
 ## How it works
 

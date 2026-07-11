@@ -29,5 +29,7 @@ create "flow/blocked-build" "b60205" \
   "github-flow: implementation blocked, needs human input (automation-managed)"
 create "flow/done" "0e8a16" \
   "github-flow: PR merged, flow complete (automation-managed)"
+create "flow/split" "5319e7" \
+  "github-flow: split into sub-issues, tracking only (automation-managed)"
 
 echo "github-flow labels are set up in ${repo}."

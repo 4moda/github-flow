@@ -10,6 +10,12 @@ inputs:
   workflow:
     description: Which workflow is asking ("shape" or "build")
     required: true
+  trigger:
+    description: >-
+      Where the `ai` label was added: "issue" (default) or "pr" (the issue's
+      flow/issue-N pull request; build.yml then owns the acknowledge role)
+    required: false
+    default: "issue"
 outputs:
   action:
     description: shape | build | acknowledge | skip
@@ -33,10 +39,11 @@ runs:
         REPO: ${{ github.repository }}
         ISSUE: ${{ inputs.issue-number }}
         WORKFLOW: ${{ inputs.workflow }}
+        TRIGGER: ${{ inputs.trigger }}
         ACTION_PATH: ${{ github.action_path }}
       run: |
         set -euo pipefail
         gh api "repos/${REPO}/issues/${ISSUE}" \
           | python3 "${ACTION_PATH}/../../scripts/gf.py" route \
-              --workflow "$WORKFLOW" --format github \
+              --workflow "$WORKFLOW" --trigger "$TRIGGER" --format github \
           | tee -a "$GITHUB_OUTPUT"

@@ -167,11 +167,71 @@ class RouteTest(unittest.TestCase):
         self.assertEqual(shape["action"], "skip")
         self.assertEqual(build["action"], "skip")
 
+    def test_split_acknowledged_by_shape(self):
+        shape, build = self.assert_exclusive(issue(labels=["flow/split"]))
+        self.assertEqual(shape["action"], "acknowledge")
+        self.assertIn("sub-issues", shape["note"])
+        self.assertEqual(build["action"], "skip")
+
     def test_notes_are_single_line(self):
         for labels in ([], ["flow/shaping"], ["flow/done"], ["flow/a", "flow/b"]):
             for workflow in ("shape", "build"):
                 res = gf.route(issue(labels=labels), workflow)
                 self.assertNotIn("\n", res["note"])
+
+
+class PrTriggerRouteTest(unittest.TestCase):
+    """`ai` added to a flow/issue-N pull request routes only through build.yml,
+    which then owns the acknowledge role."""
+
+    def route_pr(self, payload):
+        return gf.route(payload, "build", trigger="pr")
+
+    def test_pr_open_builds(self):
+        res = self.route_pr(issue(labels=["flow/pr-open"]))
+        self.assertEqual(res["action"], "build")
+        self.assertFalse(res["first_run"])
+
+    def test_blocked_build_builds(self):
+        res = self.route_pr(issue(labels=["flow/blocked-build"]))
+        self.assertEqual(res["action"], "build")
+
+    def test_awaiting_approval_ready_builds(self):
+        res = self.route_pr(issue(labels=["flow/awaiting-approval"], body=READY_BODY))
+        self.assertEqual(res["action"], "build")
+        self.assertTrue(res["first_run"])
+
+    def test_awaiting_approval_unready_acknowledged(self):
+        res = self.route_pr(issue(labels=["flow/awaiting-approval"], body=UNREADY_BODY))
+        self.assertEqual(res["action"], "acknowledge")
+        self.assertIn("checkbox", res["note"])
+
+    def test_unshaped_issue_acknowledged(self):
+        res = self.route_pr(issue())
+        self.assertEqual(res["action"], "acknowledge")
+        self.assertIn("not in a buildable state", res["note"])
+
+    def test_in_progress_acknowledged(self):
+        for label in ("flow/shaping", "flow/building"):
+            with self.subTest(label=label):
+                res = self.route_pr(issue(labels=[label]))
+                self.assertEqual(res["action"], "acknowledge")
+
+    def test_done_and_split_acknowledged(self):
+        for label in ("flow/done", "flow/split"):
+            with self.subTest(label=label):
+                res = self.route_pr(issue(labels=[label]))
+                self.assertEqual(res["action"], "acknowledge")
+
+    def test_closed_issue_acknowledged(self):
+        res = self.route_pr(issue(labels=["flow/pr-open"], state="closed"))
+        self.assertEqual(res["action"], "acknowledge")
+        self.assertIn("closed", res["note"])
+
+    def test_multiple_labels_acknowledged(self):
+        res = self.route_pr(issue(labels=["flow/pr-open", "flow/building"]))
+        self.assertEqual(res["action"], "acknowledge")
+        self.assertEqual(res["state"], "invalid")
 
 
 class CliTest(unittest.TestCase):
@@ -215,6 +275,14 @@ class CliTest(unittest.TestCase):
         lines = dict(line.split("=", 1) for line in out.strip().splitlines())
         self.assertEqual(lines["action"], "build")
         self.assertEqual(lines["first-run"], "true")
+
+    def test_route_pr_trigger(self):
+        code, out = self.run_cli(
+            ["route", "--workflow", "build", "--trigger", "pr"],
+            issue(labels=["flow/pr-open"]),
+        )
+        self.assertEqual(code, 0)
+        self.assertEqual(json.loads(out)["action"], "build")
 
 
 if __name__ == "__main__":

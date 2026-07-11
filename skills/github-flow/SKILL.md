@@ -30,7 +30,8 @@ tracked with internal `flow/*` state labels that only the workflows touch.
 
 | Who | Touches | Meaning |
 |-----|---------|---------|
-| Human | `ai` label | "run the next step now" |
+| Human | `ai` label on an issue | "run the next step now" |
+| Human | `ai` label on a `flow/issue-<n>` PR | "rework this PR per its review feedback" (equivalent to labeling the issue) |
 | Human | `ready for implementation` checkbox | approval to implement |
 | Automation | `flow/*` labels | current state; at most one per issue |
 
@@ -59,6 +60,8 @@ stateDiagram-v2
     [*] --> Raw : issue created (no flow label)
     Raw --> Shaping : human adds ai
     Shaping --> AwaitingApproval : Composer shaped the issue
+    Shaping --> Split : too large — sub-issues created instead
+    Split --> [*]
     Shaping --> BlockedShape : Composer needs human input
     BlockedShape --> Shaping : human answers + adds ai
     AwaitingApproval --> Shaping : human adds ai with checkbox unticked (re-shape)
@@ -79,9 +82,9 @@ State semantics, invariants, and edge cases:
 
 | Workflow | Trigger (in consumer repo) | Acts when | Does |
 |----------|---------------------------|-----------|------|
-| `shape.yml` | `issues: [labeled]` with `ai` | no state label, `flow/blocked-shape`, or `flow/awaiting-approval` with checkbox unticked | runs Composer, rewrites issue body, transitions state; also acknowledges `ai` in states no workflow handles |
-| `build.yml` | `issues: [labeled]` with `ai` | `flow/awaiting-approval` + checkbox ticked, `flow/blocked-build`, `flow/pr-open` | runs Crafter, commits/pushes `flow/issue-<n>`, opens or updates the PR |
-| `sync-pr.yml` | `pull_request: [closed, reopened]`, `pull_request_review: [submitted]` | PR head branch is `flow/issue-<n>` | mirrors merge/close/reopen/changes-requested back to the issue |
+| `shape.yml` | `issues: [labeled]` with `ai` | no state label, `flow/blocked-shape`, or `flow/awaiting-approval` with checkbox unticked | runs Composer; rewrites the issue body, or splits an oversized issue into shaped sub-issues; also acknowledges `ai` in states no workflow handles |
+| `build.yml` | `issues: [labeled]` or `pull_request: [labeled]` with `ai` | `flow/awaiting-approval` + checkbox ticked, `flow/blocked-build`, `flow/pr-open` | runs Crafter, commits/pushes `flow/issue-<n>`, opens or updates the PR; acknowledges PR-labeled triggers it cannot act on |
+| `sync-pr.yml` | `pull_request: [closed, reopened]`, `pull_request_review: [submitted]` | PR head branch is `flow/issue-<n>` | mirrors merge/close/reopen/changes-requested back to the issue — mechanical, no AI |
 
 Routing between shape and build is a single tested function
 (`scripts/gf.py route`), so exactly one workflow responds to any `ai`
@@ -119,3 +122,7 @@ docs/adopting.md          consumer setup guide
    automation removes the label afterwards.
 5. **Blocked states always come with a comment** saying precisely what human
    input is missing and how to resume.
+6. **AI runs in exactly two places** — the Composer step of `shape.yml` and
+   the Crafter step of `build.yml`. Routing, label management, checkbox
+   detection, sub-issue creation, PR publishing, and merge/close sync are
+   all deterministic scripts (`gf.py` + `gh`), never model calls.

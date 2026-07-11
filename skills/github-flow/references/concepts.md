@@ -33,6 +33,7 @@ is deliberately no `flow/raw` label, so new issues need no setup).
 | `flow/blocked-shape` | shaping needs human input (or the run failed) | shape.yml |
 | `flow/blocked-build` | implementation needs human input (or the run failed, or the PR was closed unmerged) | build.yml, sync-pr.yml |
 | `flow/done` | PR merged; flow complete | sync-pr.yml |
+| `flow/split` | split into sub-issues; tracking only, never implemented directly | shape.yml |
 
 `flow/shaping` and `flow/building` exist only while a run is executing; the
 run always exits them (to a result state, or to a blocked state via the
@@ -40,8 +41,9 @@ failure handler).
 
 ## Routing table
 
-When a human adds `ai`, both shape.yml and build.yml receive the event and
-ask `gf.py route` what to do. For any issue, exactly one of them acts:
+When a human adds `ai` **to an issue**, both shape.yml and build.yml
+receive the event and ask `gf.py route` what to do. For any issue, exactly
+one of them acts:
 
 | Condition | shape.yml | build.yml |
 |-----------|-----------|-----------|
@@ -54,6 +56,7 @@ ask `gf.py route` what to do. For any issue, exactly one of them acts:
 | `flow/blocked-build` / `flow/pr-open` | skip | **build** |
 | `flow/shaping` / `flow/building` | acknowledge (busy) | skip |
 | `flow/done` | acknowledge (done) | skip |
+| `flow/split` | acknowledge (use the sub-issues) | skip |
 | unknown `flow/*` label | acknowledge (unknown) | skip |
 
 "Acknowledge" posts a comment explaining why nothing ran and removes `ai`,
@@ -62,6 +65,16 @@ so the trigger label never lingers silently.
 The re-shape row resolves scope rewrites: while the checkbox is unticked,
 `ai` always means "shape (again)". Ticking the checkbox is the only thing
 that changes the meaning of `ai` to "implement".
+
+### PR trigger (rework shortcut)
+
+`ai` added **to a `flow/issue-<n>` pull request** reaches only build.yml
+(shape.yml ignores PR events). The linked issue is derived from the branch
+name, then the same routing applies with build.yml owning the acknowledge
+role: buildable states run the Crafter (which reads the PR reviews and
+comments), every other state gets an explanatory comment on the PR and the
+label is removed. So "leave review feedback on the PR, label the PR" and
+"label the issue" are equivalent gestures.
 
 ## Happy path walkthrough
 
@@ -78,8 +91,34 @@ that changes the meaning of `ai` to "implement".
    - Satisfied → merges. sync-pr.yml sets `flow/done`; GitHub closes the
      issue via `Closes #<n>`.
    - Wants changes → leaves a review requesting changes (sync-pr.yml
-     comments a reminder) and adds `ai`; build.yml reruns the Crafter on the
-     same branch and PR.
+     comments a reminder) and adds `ai` to the PR or the issue; build.yml
+     reruns the Crafter on the same branch and PR with the review feedback
+     in context.
+
+## Split (oversized issues)
+
+When a raw issue is too large for one reviewable PR, the Composer reports
+`split` instead of `shaped`. The workflow then mechanically creates 2–8
+sub-issues (each already in the shaped template, state
+`flow/awaiting-approval`), rewrites the parent into a tracking overview
+with a `## Sub-issues` checklist, and sets the parent to `flow/split`.
+Humans approve and trigger each sub-issue individually; the parent's
+checklist ticks itself as sub-issues close. `ai` on a `flow/split` parent
+is acknowledged with a pointer to the sub-issues.
+
+## What sync-pr does (and does not) react to
+
+sync-pr.yml is purely mechanical — no AI. It runs only on:
+
+- `pull_request` `closed` — merged → issue `flow/done`; not merged →
+  issue `flow/blocked-build`.
+- `pull_request` `reopened` — issue back to `flow/pr-open`.
+- `pull_request_review` `submitted` — only `changes_requested` reviews get
+  a rework-guidance comment on the issue; approvals and plain comment
+  reviews are no-ops.
+
+Ordinary conversation comments (`issue_comment`) never trigger it, and PRs
+whose head branch is not `flow/issue-<n>` are ignored entirely.
 
 ## Blocked loops
 

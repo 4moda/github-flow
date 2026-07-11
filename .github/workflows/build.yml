@@ -1,11 +1,18 @@
 # Reusable workflow: implement an approved issue with the Crafter.
 #
-# Call from a consumer repository on `issues: [labeled]`. Acts when the
-# added label is `ai` and the issue is buildable: `flow/awaiting-approval`
-# with the "ready for implementation" checkbox ticked (first run), or
-# `flow/blocked-build` / `flow/pr-open` (retry and rework runs). The Crafter
-# edits the working tree only; this workflow commits, pushes, and opens or
-# updates the pull request. Merging is always a human action.
+# Call from a consumer repository on `issues: [labeled]` and
+# `pull_request: [labeled]`. Acts when the added label is `ai` and the
+# issue is buildable: `flow/awaiting-approval` with the
+# "ready for implementation" checkbox ticked (first run), or
+# `flow/blocked-build` / `flow/pr-open` (retry and rework runs).
+#
+# Two equivalent trigger surfaces:
+#   - `ai` on the issue itself, or
+#   - `ai` on the issue's `flow/issue-<n>` pull request (the rework
+#     shortcut: leave review feedback on the PR, then label the PR).
+#
+# The Crafter edits the working tree only; this workflow commits, pushes,
+# and opens or updates the pull request. Merging is always a human action.
 name: github-flow / build
 
 on:
@@ -33,23 +40,75 @@ on:
 jobs:
   route:
     if: >-
-      github.event_name == 'issues' &&
       github.event.action == 'labeled' &&
-      github.event.label.name == 'ai'
+      github.event.label.name == 'ai' &&
+      (github.event_name == 'issues' ||
+       (github.event_name == 'pull_request' &&
+        startsWith(github.event.pull_request.head.ref, 'flow/issue-')))
     runs-on: ubuntu-latest
     permissions:
       issues: read
     outputs:
       action: ${{ steps.route.outputs.action }}
       state: ${{ steps.route.outputs.state }}
+      note: ${{ steps.route.outputs.note }}
       first-run: ${{ steps.route.outputs.first-run }}
+      issue-number: ${{ steps.issue.outputs.number }}
+      trigger: ${{ steps.issue.outputs.trigger }}
     steps:
+      - name: Identify issue and trigger surface
+        id: issue
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          EVENT_ISSUE: ${{ github.event.issue.number }}
+          HEAD_REF: ${{ github.event.pull_request.head.ref }}
+        run: |
+          set -euo pipefail
+          if [ "$EVENT_NAME" = "issues" ]; then
+            number="$EVENT_ISSUE"
+            trigger="issue"
+          else
+            number="${HEAD_REF#flow/issue-}"
+            trigger="pr"
+            if ! [[ "$number" =~ ^[0-9]+$ ]]; then
+              number=""
+            fi
+          fi
+          {
+            echo "number=${number}"
+            echo "trigger=${trigger}"
+          } >> "$GITHUB_OUTPUT"
+
       - name: Route by current state
         id: route
+        if: steps.issue.outputs.number != ''
         uses: 4moda/github-flow/actions/route@v1
         with:
-          issue-number: ${{ github.event.issue.number }}
+          issue-number: ${{ steps.issue.outputs.number }}
           workflow: build
+          trigger: ${{ steps.issue.outputs.trigger }}
+
+  # PR-labeled triggers never reach shape.yml, so build.yml answers the
+  # ones it cannot act on itself: comment on the PR and clear the trigger.
+  acknowledge:
+    needs: route
+    if: needs.route.outputs.action == 'acknowledge'
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+    steps:
+      - name: Comment on PR and clear trigger
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          PR: ${{ github.event.pull_request.number }}
+          NOTE: ${{ needs.route.outputs.note }}
+        run: |
+          set -euo pipefail
+          gh api -X POST "repos/${REPO}/issues/${PR}/comments" \
+            -f body="**github-flow** — no step to run. ${NOTE}" >/dev/null
+          gh api -X DELETE "repos/${REPO}/issues/${PR}/labels/ai" \
+            >/dev/null 2>&1 || true
 
   build:
     needs: route
@@ -57,18 +116,18 @@ jobs:
     runs-on: ubuntu-latest
     # job-level on purpose: workflow-level concurrency is unreliable in
     # called reusable workflows. Shared group with shape.yml serializes all
-    # agent runs per issue.
+    # agent runs per issue, whichever surface triggered them.
     concurrency:
-      group: github-flow-issue-${{ github.event.issue.number }}
+      group: github-flow-issue-${{ needs.route.outputs.issue-number }}
       cancel-in-progress: false
     permissions:
       contents: write
       issues: write
       pull-requests: write
     env:
-      ISSUE: ${{ github.event.issue.number }}
+      ISSUE: ${{ needs.route.outputs.issue-number }}
       REPO: ${{ github.repository }}
-      BRANCH: flow/issue-${{ github.event.issue.number }}
+      BRANCH: flow/issue-${{ needs.route.outputs.issue-number }}
       DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
       RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
       GH_SERVER: ${{ github.server_url }}
@@ -92,6 +151,15 @@ jobs:
           issue-number: ${{ env.ISSUE }}
           state: flow/building
           remove-ai: "true"
+
+      - name: Clear trigger from PR
+        if: needs.route.outputs.trigger == 'pr'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ github.event.pull_request.number }}
+        run: |
+          gh api -X DELETE "repos/${REPO}/issues/${PR}/labels/ai" \
+            >/dev/null 2>&1 || true
 
       - name: Prepare working branch
         run: |

@@ -136,16 +136,27 @@ jobs:
             outcome="$(jq -r '.outcome // "failed"' "$OUT_DIR/result.json")"
             note="$(jq -r '.note // ""' "$OUT_DIR/result.json")"
           fi
-          if [ "$outcome" = "shaped" ] && [ ! -s "$OUT_DIR/issue-body.md" ]; then
-            outcome=failed
-            note='The Composer reported "shaped" but wrote no issue-body.md.'
+          case "$outcome" in shaped|blocked|split) ;; *) outcome=failed ;; esac
+          if [ "$outcome" = "shaped" ] || [ "$outcome" = "split" ]; then
+            if [ ! -s "$OUT_DIR/issue-body.md" ]; then
+              outcome=failed
+              note='The Composer reported success but wrote no issue-body.md.'
+            fi
           fi
           if [ "$outcome" = "shaped" ] && \
              ! grep -qi 'ready for implementation' "$OUT_DIR/issue-body.md"; then
             outcome=failed
             note='The shaped body is missing the "ready for implementation" checkbox, so approval would be impossible.'
           fi
-          case "$outcome" in shaped|blocked) ;; *) outcome=failed ;; esac
+          if [ "$outcome" = "split" ]; then
+            count="$(jq '.issues | length' "$OUT_DIR/result.json" 2>/dev/null || echo 0)"
+            valid="$(jq '[.issues[]? | ((.title // "" | length) > 0) and ((.body // "" | length) > 0)] | all' \
+              "$OUT_DIR/result.json" 2>/dev/null || echo false)"
+            if [ "$count" -lt 2 ] || [ "$count" -gt 8 ] || [ "$valid" != "true" ]; then
+              outcome=failed
+              note="A split must propose 2-8 sub-issues, each with a title and body (got ${count})."
+            fi
+          fi
           {
             echo '**github-flow** — Composer is blocked on missing input.'
             echo
@@ -176,6 +187,51 @@ jobs:
             "ready for implementation" checkbox and add the `ai` label to
             start implementation. Adding `ai` while the box is unchecked
             sends the issue back to the Composer instead.
+
+      # Sub-issue creation is mechanical: the Composer only proposed the
+      # titles and bodies in result.json.
+      - name: Apply result — split (create sub-issues)
+        id: split
+        if: steps.result.outputs.outcome == 'split'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh label create "flow/awaiting-approval" --repo "$REPO" --color 1d76db \
+            --description "github-flow: shaped, waiting for human approval (automation-managed)" \
+            >/dev/null 2>&1 || true
+          count="$(jq '.issues | length' "$OUT_DIR/result.json")"
+          : > "$OUT_DIR/sub-list.md"
+          for i in $(seq 0 $((count - 1))); do
+            title="$(jq -r ".issues[$i].title" "$OUT_DIR/result.json")"
+            jq -r ".issues[$i].body" "$OUT_DIR/result.json" > "$OUT_DIR/sub-body.md"
+            number="$(gh api -X POST "repos/${REPO}/issues" \
+              -f title="$title" -F body=@"$OUT_DIR/sub-body.md" \
+              -f "labels[]=flow/awaiting-approval" --jq '.number')"
+            echo "- [ ] #${number} ${title}" >> "$OUT_DIR/sub-list.md"
+          done
+          {
+            cat "$OUT_DIR/issue-body.md"
+            echo
+            echo "## Sub-issues"
+            echo
+            cat "$OUT_DIR/sub-list.md"
+          } > "$OUT_DIR/parent-body.md"
+
+      - name: Apply result — split (update parent)
+        if: steps.result.outputs.outcome == 'split'
+        uses: 4moda/github-flow/actions/update-issue@v1
+        with:
+          issue-number: ${{ env.ISSUE }}
+          state: flow/split
+          body-file: ${{ env.OUT_DIR }}/parent-body.md
+          comment: >-
+            **github-flow** — this issue was too large for one PR, so the
+            Composer split it into sub-issues (see the "Sub-issues" section).
+            Each sub-issue is already shaped and awaiting approval: review
+            it, tick its "ready for implementation" checkbox, and add the
+            `ai` label on that sub-issue to implement it. This issue is now
+            a tracking issue and will not be implemented directly.
 
       - name: Apply result — blocked
         if: steps.result.outputs.outcome == 'blocked'

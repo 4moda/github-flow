@@ -56,3 +56,5 @@ diff.>
   while the box is unticked re-runs the Composer on the edited body.
 - The `Original request` block is written once, at first shaping, and then
   preserved verbatim by later re-shapes.
+- Sub-issues created by a split use this same template; their
+  `Original request` block may simply reference the parent issue.

@@ -98,5 +98,5 @@ jobs:
           comment: >-
             **github-flow** — a review on PR
             #${{ github.event.pull_request.number }} requested changes. Add
-            the `ai` label to this issue to have the Crafter address the
-            review feedback.
+            the `ai` label to the PR (or to this issue) to have the Crafter
+            address the review feedback.

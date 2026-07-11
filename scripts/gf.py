@@ -31,6 +31,7 @@ PR_OPEN = "flow/pr-open"
 BLOCKED_SHAPE = "flow/blocked-shape"
 BLOCKED_BUILD = "flow/blocked-build"
 DONE = "flow/done"
+SPLIT = "flow/split"
 
 KNOWN_STATES = {
     SHAPING,
@@ -40,6 +41,7 @@ KNOWN_STATES = {
     BLOCKED_SHAPE,
     BLOCKED_BUILD,
     DONE,
+    SPLIT,
 }
 
 READY_RE = re.compile(
@@ -74,14 +76,17 @@ def is_ready(issue: dict) -> bool:
     return bool(READY_RE.search(issue.get("body") or ""))
 
 
-def route(issue: dict, workflow: str) -> dict:
+def route(issue: dict, workflow: str, trigger: str = "issue") -> dict:
     """Decide what `workflow` (shape or build) should do with `issue`.
 
-    Returns {"action", "state", "note", "first_run"}. For any issue, exactly
-    one of the two workflows returns a non-"skip" action, so every `ai`
-    trigger is answered exactly once. shape.yml acknowledges the states
-    neither workflow can act on, so the `ai` label never sticks around
-    silently.
+    `trigger` is "issue" when `ai` was added to the issue itself, or "pr"
+    when it was added to the issue's pull request (the rework shortcut:
+    review the PR, then label the PR). PR triggers only reach build.yml, so
+    for them build.yml owns the acknowledge role; for issue triggers
+    shape.yml owns it. Either way, every `ai` trigger is answered exactly
+    once: for any issue, at most one workflow returns a non-"skip" action.
+
+    Returns {"action", "state", "note", "first_run"}.
     """
 
     def result(action: str, state: str, note: str = "", first_run: bool = False) -> dict:
@@ -93,9 +98,9 @@ def route(issue: dict, workflow: str) -> dict:
             "first_run": first_run,
         }
 
-    ack = "acknowledge" if workflow == "shape" else "skip"
+    ack = "acknowledge" if (workflow == "shape" or trigger == "pr") else "skip"
 
-    # `ai` on a pull request is not part of the flow
+    # a payload that is itself a pull request is not part of the flow
     if "pull_request" in issue:
         return result("skip", NO_STATE)
 
@@ -116,13 +121,31 @@ def route(issue: dict, workflow: str) -> dict:
         )
 
     if state in (NO_STATE, BLOCKED_SHAPE):
-        return result("shape" if workflow == "shape" else "skip", state)
+        if workflow == "shape":
+            return result("shape", state)
+        if trigger == "pr":
+            return result(
+                ack,
+                state,
+                f"The linked issue is not in a buildable state (`{state}`). "
+                "Shape and approve it on the issue itself first.",
+            )
+        return result("skip", state)
 
     if state == AWAITING_APPROVAL:
         if is_ready(issue):
             return result("build" if workflow == "build" else "skip", state, first_run=True)
         # unchecked box = not approved yet: send the issue back to the Composer
-        return result("shape" if workflow == "shape" else "skip", state)
+        if workflow == "shape":
+            return result("shape", state)
+        if trigger == "pr":
+            return result(
+                ack,
+                state,
+                'The linked issue\'s "ready for implementation" checkbox is '
+                "not ticked. Approve it on the issue itself first.",
+            )
+        return result("skip", state)
 
     if state in (BLOCKED_BUILD, PR_OPEN):
         return result("build" if workflow == "build" else "skip", state)
@@ -141,6 +164,14 @@ def route(issue: dict, workflow: str) -> dict:
             state,
             "This issue already completed the flow (`flow/done`). "
             "Open a new issue for follow-up work.",
+        )
+
+    if state == SPLIT:
+        return result(
+            ack,
+            state,
+            "This issue was split into sub-issues; run the flow on those "
+            "instead (see the Sub-issues section).",
         )
 
     return result(
@@ -164,6 +195,7 @@ def main(argv: list[str] | None = None) -> int:
     sub.add_parser("ready")
     route_p = sub.add_parser("route")
     route_p.add_argument("--workflow", choices=["shape", "build"], required=True)
+    route_p.add_argument("--trigger", choices=["issue", "pr"], default="issue")
     route_p.add_argument("--format", choices=["json", "github"], default="json")
     args = parser.parse_args(argv)
 
@@ -178,7 +210,7 @@ def main(argv: list[str] | None = None) -> int:
     elif args.command == "ready":
         print("true" if is_ready(issue) else "false")
     elif args.command == "route":
-        res = route(issue, args.workflow)
+        res = route(issue, args.workflow, args.trigger)
         if args.format == "github":
             _print_github_output(res, sys.stdout)
         else:
