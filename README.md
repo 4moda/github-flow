@@ -77,8 +77,11 @@ apply mechanically, so every state transition is explainable from logs.
   access).
 - **What leaves GitHub:** during the two AI steps, repository content and
   issue/PR text are sent to the selected agent's model API as context —
-  that is inherent to running a coding agent. Nothing is sent anywhere
-  during the mechanical steps.
+  that is inherent to running a coding agent. Web research tools
+  (search/fetch) are also on by default so agents can verify external
+  facts; disable them with `web_research: false` to keep agent runs
+  offline apart from the model API. Nothing is sent anywhere during the
+  mechanical steps.
 - **Blast radius is bounded by design**: agents cannot push, merge, or
   label; the workflows do, deterministically, and merging is always left
   to a human. The checkout used for agent runs keeps no git credential

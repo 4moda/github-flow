@@ -161,6 +161,14 @@ jobs:
 に一覧があり（例: `claude-opus-4-8`、`claude-sonnet-5`）、Codex と Gemini
 の ID はそれぞれのベンダードキュメントを参照してください。
 
+Web 調査: デフォルトでエージェントには Web 検索・フェッチのツールが与えら
+れます。これにより Composer は外部の事実（API やライブラリの機能など）を
+ブロックせずに確認でき、Crafter はドキュメントを参照できます。エージェント
+の実行をモデル API 以外オフラインに保ちたい場合は、`shape` と `build` に
+`with: { web_research: false }` を渡してください。エージェントごとの対応
+は、Claude の `WebSearch`/`WebFetch`、Codex の `web_search`、Gemini の
+`web_fetch`/`google_web_search` です。
+
 暴走防止策: すべてのエージェント実行は二重に制限されています —— エージェン
 トのターン数（`with: { max_turns: N }` で調整可能。デフォルトは Composer
 が50、Crafter が150）と、実時間のジョブタイムアウト（shape が30分、build

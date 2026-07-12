@@ -49,6 +49,14 @@ on:
         type: string
         required: false
         default: "flow"
+      web_research:
+        description: >-
+          Give the agent web research tools (search/fetch) so it can check
+          external facts instead of blocking on them. Set false to keep
+          agent runs offline apart from the model API.
+        type: boolean
+        required: false
+        default: true
     secrets:
       anthropic_api_key:
         description: Anthropic API key; enables the claude agent (or provide claude_code_oauth_token)
@@ -286,7 +294,7 @@ jobs:
           # publishing belongs to the workflow: the contract already forbids
           # commit/push/gh, the deny rules make it fail fast instead
           claude_args: >-
-            --allowedTools "Bash,Read,Write,Edit,Glob,Grep"
+            --allowedTools "Bash,Read,Write,Edit,Glob,Grep${{ inputs.web_research && ',WebSearch,WebFetch' || '' }}"
             --disallowedTools "Bash(git commit:*),Bash(git push:*),Bash(gh:*)"
             --max-turns ${{ inputs.max_turns }}
             ${{ inputs.model != '' && format('--model {0}', inputs.model) || '' }}
@@ -301,7 +309,10 @@ jobs:
           # the extra writable root is where CONTEXT_DIR/OUT_DIR live;
           # network stays on so the Crafter can install deps and run tests
           sandbox: workspace-write
-          codex-args: '["-c", "sandbox_workspace_write.writable_roots=[\"${{ runner.temp }}\"]", "-c", "sandbox_workspace_write.network_access=true"]'
+          codex-args: >-
+            ["-c", "sandbox_workspace_write.writable_roots=[\"${{ runner.temp }}\"]",
+             "-c", "sandbox_workspace_write.network_access=true",
+             "-c", "web_search=\"${{ inputs.web_research && 'live' || 'disabled' }}\""]
           # the labeled-event gate (trigger label, triage+ actors) is this
           # workflow's access control; no per-user gate here
           allow-users: "*"
@@ -317,14 +328,14 @@ jobs:
           gemini_api_key: ${{ secrets.gemini_api_key }}
           gemini_model: ${{ inputs.model }}
           prompt: ${{ env.AGENT_PROMPT }}
-          # tools.core is an allowlist: file tools plus shell for tests; no
-          # web, no MCP. Both grep tool names are listed to cover CLI
-          # versions before/after the rename.
+          # tools.core is an allowlist: file tools plus shell for tests and,
+          # when enabled, web research; no MCP. Both grep tool names are
+          # listed to cover CLI versions before/after the rename.
           settings: |-
             {
               "model": { "maxSessionTurns": ${{ inputs.max_turns }} },
               "context": { "includeDirectories": ["${{ env.CONTEXT_DIR }}", "${{ env.OUT_DIR }}"] },
-              "tools": { "core": ["read_file", "read_many_files", "list_directory", "glob", "grep_search", "search_file_content", "write_file", "replace", "run_shell_command"] },
+              "tools": { "core": ["read_file", "read_many_files", "list_directory", "glob", "grep_search", "search_file_content", "write_file", "replace", "run_shell_command"${{ inputs.web_research && ', "web_fetch", "google_web_search"' || '' }}] },
               "telemetry": { "enabled": false }
             }
 

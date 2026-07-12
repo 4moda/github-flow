@@ -41,6 +41,14 @@ on:
         type: string
         required: false
         default: "flow"
+      web_research:
+        description: >-
+          Give the agent web research tools (search/fetch) so it can check
+          external facts instead of blocking on them. Set false to keep
+          agent runs offline apart from the model API.
+        type: boolean
+        required: false
+        default: true
 
     secrets:
       anthropic_api_key:
@@ -213,7 +221,7 @@ jobs:
           # Write is limited to the output directory (// = absolute path
           # rule), so the working tree stays read-only for real
           claude_args: >-
-            --allowedTools "Read,Glob,Grep,Write(/${{ runner.temp }}/gf-out/**)"
+            --allowedTools "Read,Glob,Grep,${{ inputs.web_research && 'WebSearch,WebFetch,' || '' }}Write(/${{ runner.temp }}/gf-out/**)"
             --max-turns ${{ inputs.max_turns }}
             ${{ inputs.model != '' && format('--model {0}', inputs.model) || '' }}
 
@@ -224,11 +232,14 @@ jobs:
           openai-api-key: ${{ secrets.openai_api_key }}
           prompt: ${{ env.AGENT_PROMPT }}
           model: ${{ inputs.model }}
-          # workspace-write keeps network off; the extra writable root is
-          # where CONTEXT_DIR/OUT_DIR live. Shape never applies working-tree
+          # workspace-write keeps network off (web_search is an API-side
+          # tool and needs none); the extra writable root is where
+          # CONTEXT_DIR/OUT_DIR live. Shape never applies working-tree
           # edits, so a stray write there is discarded with the runner.
           sandbox: workspace-write
-          codex-args: '["-c", "sandbox_workspace_write.writable_roots=[\"${{ runner.temp }}\"]"]'
+          codex-args: >-
+            ["-c", "sandbox_workspace_write.writable_roots=[\"${{ runner.temp }}\"]",
+             "-c", "web_search=\"${{ inputs.web_research && 'live' || 'disabled' }}\""]
           # the labeled-event gate (trigger label, triage+ actors) is this
           # workflow's access control; no per-user gate here
           allow-users: "*"
@@ -245,13 +256,14 @@ jobs:
           gemini_model: ${{ inputs.model }}
           prompt: ${{ env.AGENT_PROMPT }}
           # tools.core is an allowlist: read-only exploration plus file
-          # writes (for OUT_DIR); no shell, no web. Both grep tool names are
-          # listed to cover CLI versions before/after the rename.
+          # writes (for OUT_DIR) and, when enabled, web research; no shell.
+          # Both grep tool names are listed to cover CLI versions
+          # before/after the rename.
           settings: |-
             {
               "model": { "maxSessionTurns": ${{ inputs.max_turns }} },
               "context": { "includeDirectories": ["${{ env.CONTEXT_DIR }}", "${{ env.OUT_DIR }}"] },
-              "tools": { "core": ["read_file", "read_many_files", "list_directory", "glob", "grep_search", "search_file_content", "write_file"] },
+              "tools": { "core": ["read_file", "read_many_files", "list_directory", "glob", "grep_search", "search_file_content", "write_file"${{ inputs.web_research && ', "web_fetch", "google_web_search"' || '' }}] },
               "telemetry": { "enabled": false }
             }
 

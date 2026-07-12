@@ -156,6 +156,14 @@ listed in the
 (e.g. `claude-opus-4-8`, `claude-sonnet-5`), Codex and Gemini ids in the
 respective vendor docs.
 
+Web research: by default the agents get web search/fetch tools so the
+Composer can verify external facts (APIs, library capabilities) instead of
+blocking on them, and the Crafter can consult documentation. Pass
+`with: { web_research: false }` to `shape` and `build` to keep agent runs
+offline apart from the model API. Per agent this maps to Claude's
+`WebSearch`/`WebFetch` tools, Codex's `web_search`, and Gemini's
+`web_fetch`/`google_web_search`.
+
 Runaway guards: every agent run is bounded twice — by agent turns
 (tunable via `with: { max_turns: N }`; defaults 50 for the Composer, 150
 for the Crafter) and by wall-clock job timeouts (30 min shape, 90 min
