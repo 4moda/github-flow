@@ -17,6 +17,7 @@ The run prompt names a context directory and an output directory.
 | `issue-comments.json` | issue conversation — human answers to blocked questions live here |
 | `tree.txt` | `git ls-files` of the target repository |
 | `readme-excerpt.md` | beginning of the repository README, when present |
+| `notes-composer.md` | your handoff notes from the previous Composer run on this issue, when present |
 | `contracts/` | this contract, `issue-template.md`, `crafter.md`, `concepts.md` |
 
 The target repository is also checked out in the working directory —
@@ -30,7 +31,10 @@ Rewrite the issue body into the template defined in
 1. Read the current body and all issue comments. When re-shaping (after
    `flow/blocked-shape`, or from `flow/awaiting-approval` because a human
    revised the scope), the newest comments and edits carry the human's
-   answers — honor them over older content.
+   answers — honor them over older content. When `notes-composer.md`
+   exists, start from it — it is your own memory from the previous run
+   (what you already explored, decided, and asked). The current issue body
+   and newer human comments always take precedence over stale notes.
 2. Explore the repository enough to fill **Likely touched areas** with real
    paths and to sanity-check that the proposed approach is feasible.
 3. When web research tools (search/fetch) are available, use them to verify
@@ -102,6 +106,12 @@ template body).
 `issue-body.md` — required when `outcome` is `shaped` (the complete
 replacement issue body, following the template) or `split` (the parent
 overview, without the AI Ready checkbox).
+
+`notes.md` — recommended: handoff notes for the next Composer run on this
+issue, written for yourself. Record verified facts (with where you found
+them), decisions and their reasons, and open questions — not a run diary.
+Keep it short; it replaces your previous notes entirely, and the workflow
+publishes it on the issue as an auto-managed comment visible to humans.
 
 ## Hard rules
 

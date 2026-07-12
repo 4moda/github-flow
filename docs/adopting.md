@@ -226,6 +226,11 @@ Only the `flow` label and the `ready for implementation` checkbox. All
   issue-driven-flow replicates that for its API-created PRs; the closing
   keyword (`Closes #N`) and attribution footer are appended automatically
   either way.
+- Each agent role may leave handoff notes on the issue as one auto-managed
+  comment per role ("… handoff notes …"). They carry the agent's own
+  memory (facts checked, decisions, open questions) into its next run on
+  the same issue. Humans may edit or delete them freely; the current
+  issue body and newer human comments always take precedence.
 - Ordinary issue/PR conversation comments never trigger anything by
   themselves — runs start only from the `flow` label (plus PR
   close/reopen/review-submit events for the mechanical sync).

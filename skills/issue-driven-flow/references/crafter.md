@@ -22,6 +22,7 @@ The run prompt names a context directory and an output directory.
 | `tree.txt` | `git ls-files` of the repository |
 | `readme-excerpt.md` | beginning of the repository README, when present |
 | `pr-template.md` | the repository's own PR template, when present — structure your summary with it |
+| `notes-crafter.md` | your handoff notes from the previous Crafter run on this issue, when present |
 | `contracts/` | this contract, `composer.md`, `issue-template.md`, `concepts.md` |
 
 The repository is checked out in the working directory on the issue's
@@ -35,7 +36,10 @@ previous changes.
 2. On rework runs (a PR exists, or the issue was `flow/blocked-build`): read
    the PR reviews, inline comments, and the newest issue comments. Address
    every requested change, or say explicitly in your summary why one was
-   not addressed.
+   not addressed. When `notes-crafter.md` exists, start from it — it is
+   your own memory from the previous run (what you built, verified, and
+   left open). Review feedback and newer human comments always take
+   precedence over stale notes.
 3. Implement the smallest change that satisfies the acceptance criteria,
    following the repository's existing conventions (style, naming, test
    layout). Web research tools (search/fetch), when available, may be used
@@ -83,6 +87,12 @@ as the summary: keep its headings, drop placeholder comments, and omit
 sections that don't apply. Do not add a closing keyword (`Closes #N`) or
 an issue reference section yourself — the workflow appends those
 mechanically.
+
+`notes.md` — recommended: handoff notes for the next Crafter run on this
+issue, written for yourself. Record what you implemented and why, how it
+was verified, and known follow-ups or traps — not a run diary. Keep it
+short; it replaces your previous notes entirely, and the workflow
+publishes it on the issue as an auto-managed comment visible to humans.
 
 ## Hard rules
 

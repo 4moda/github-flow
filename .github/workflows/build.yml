@@ -414,6 +414,34 @@ jobs:
             echo "title=${title}"
           } >> "$GITHUB_OUTPUT"
 
+      # Handoff notes: the Crafter may leave OUT_DIR/notes.md for its next
+      # run on this issue. Persist it as one auto-managed, marked comment
+      # (updated in place); build-context feeds it back as notes-crafter.md.
+      # Auxiliary to the flow, so a failure here must not fail the run.
+      - name: Save handoff notes
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          [ -s "$OUT_DIR/notes.md" ] || exit 0
+          marker='<!-- issue-driven-flow:notes:crafter -->'
+          {
+            echo "$marker"
+            echo '**issue-driven-flow** — Crafter handoff notes for its next run on this issue (auto-managed; humans may edit or delete).'
+            echo
+            head -c 60000 "$OUT_DIR/notes.md"
+          } > "$OUT_DIR/notes-comment.md"
+          existing="$(gh api --paginate "repos/${REPO}/issues/${ISSUE}/comments" \
+            --jq '.[] | select(.body | startswith("<!-- issue-driven-flow:notes:crafter -->")) | .id' | tail -n 1)"
+          if [ -n "$existing" ]; then
+            gh api -X PATCH "repos/${REPO}/issues/comments/${existing}" \
+              -F body=@"$OUT_DIR/notes-comment.md" >/dev/null
+          else
+            gh api -X POST "repos/${REPO}/issues/${ISSUE}/comments" \
+              -F body=@"$OUT_DIR/notes-comment.md" >/dev/null
+          fi
+
       - name: Publish branch and PR
         id: publish
         if: steps.result.outputs.outcome == 'ready'
