@@ -8,10 +8,12 @@ Issue-driven AI development for GitHub, shared across repositories.
 
 Humans steer with **one label and one checkbox**: add `flow` to an issue to
 run the next automated step; tick `ready for implementation` to approve
-implementation. Claude runs inside GitHub Actions — the **Composer** shapes
-raw issues into implementable specs, the **Crafter** implements approved
-issues as pull requests. **Merging is always a human action.** Internal
-`flow/*` state labels are managed entirely by automation.
+implementation. A coding agent — **Claude Code, Codex, or Gemini CLI**,
+picked from the secrets you provide — runs inside GitHub Actions: the
+**Composer** shapes raw issues into implementable specs, the **Crafter**
+implements approved issues as pull requests. **Merging is always a human
+action.** Internal `flow/*` state labels are managed entirely by
+automation.
 
 ```mermaid
 stateDiagram-v2
@@ -56,11 +58,16 @@ apply mechanically, so every state transition is explainable from logs.
 ## Security model
 
 - **Credentials are the consumer's own.** Each consuming repository
-  provides its own `ANTHROPIC_API_KEY` or `CLAUDE_CODE_OAUTH_TOKEN` as a
-  GitHub Actions secret. This repository ships code only — it never
-  receives, stores, or proxies anyone's tokens.
-- **The Claude credential is sent to the Anthropic API and nowhere else.**
-  It is consumed by [`anthropics/claude-code-action`](https://github.com/anthropics/claude-code-action)
+  provides its own agent secret (`ANTHROPIC_API_KEY` /
+  `CLAUDE_CODE_OAUTH_TOKEN`, `OPENAI_API_KEY`, or `GEMINI_API_KEY`) as a
+  GitHub Actions secret; the workflows run the matching agent. This
+  repository ships code only — it never receives, stores, or proxies
+  anyone's tokens.
+- **The agent credential is sent to its own vendor's API and nowhere
+  else.** It is consumed by the vendor's official action
+  ([`anthropics/claude-code-action`](https://github.com/anthropics/claude-code-action),
+  [`openai/codex-action`](https://github.com/openai/codex-action), or
+  [`google-github-actions/run-gemini-cli`](https://github.com/google-github-actions/run-gemini-cli))
   running on the consumer repository's own runner. The mechanical steps
   talk only to `github.com` with the run's `GITHUB_TOKEN`. GitHub masks
   secrets in logs.
@@ -69,12 +76,17 @@ apply mechanically, so every state transition is explainable from logs.
   per job (shape never gets `contents: write`; sync-pr never gets code
   access).
 - **What leaves GitHub:** during the two AI steps, repository content and
-  issue/PR text are sent to the Anthropic API as model context — that is
-  inherent to running Claude. Nothing is sent anywhere during the
-  mechanical steps.
+  issue/PR text are sent to the selected agent's model API as context —
+  that is inherent to running a coding agent. Nothing is sent anywhere
+  during the mechanical steps.
 - **Blast radius is bounded by design**: agents cannot push, merge, or
   label; the workflows do, deterministically, and merging is always left
-  to a human.
+  to a human. The checkout used for agent runs keeps no git credential
+  (`persist-credentials: false`) — the workflow re-authenticates only in
+  its own publish step — Codex and Gemini runs receive no GitHub token at
+  all, and each agent runs under a tool allowlist (the Composer can write
+  only to its output directory; `git push`/`gh` are denied to the
+  Crafter).
 
 ## How it works
 

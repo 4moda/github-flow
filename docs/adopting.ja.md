@@ -34,14 +34,22 @@ gh api -X PUT repos/<owner>/<repo>/actions/permissions/workflow \
 を保持したまま `flow/blocked-build` になり、設定を切り替えた後に `flow` を
 追加すると PR のオープンから再開します。
 
-## 2. Claude の認証情報を追加する
+## 2. エージェントの認証情報を追加する
 
-利用側リポジトリ（または所有する組織）に、以下の **いずれか1つ** を追加し
-ます:
+利用側リポジトリ（または所有する組織）に、実行したいコーディングエージェン
+トのシークレットを追加します —— ワークフローは提供されたシークレットから
+エージェントを自動検出します:
 
-- `ANTHROPIC_API_KEY` —— Anthropic API キー、または
-- `CLAUDE_CODE_OAUTH_TOKEN` —— Claude Code OAuth トークン（`claude
-  setup-token` で取得、Pro/Max サブスクリプション向け）。
+| シークレット | 実行されるエージェント |
+|--------------|------------------------|
+| `ANTHROPIC_API_KEY`（Anthropic API キー）または `CLAUDE_CODE_OAUTH_TOKEN`（`claude setup-token` で取得、Pro/Max サブスクリプション向け） | **Claude Code**（[anthropics/claude-code-action](https://github.com/anthropics/claude-code-action)） |
+| `OPENAI_API_KEY` | **Codex**（[openai/codex-action](https://github.com/openai/codex-action)） |
+| `GEMINI_API_KEY` | **Gemini CLI**（[google-github-actions/run-gemini-cli](https://github.com/google-github-actions/run-gemini-cli)） |
+
+シークレットは1つで十分です。複数のエージェントのシークレットが存在する
+場合、自動検出は claude、codex、gemini の順で優先します。明示的に選ぶには
+`shape` と `build` に `with: { agent: codex }`（または `gemini`、`claude`）
+を渡してください。
 
 任意: `GF_BOT_TOKEN` —— プッシュと PR 作成に使用する PAT（contents: write,
 pull-requests: write）。これを指定しない場合はデフォルトの `GITHUB_TOKEN`
@@ -101,6 +109,8 @@ jobs:
     secrets:
       anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
       claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+      openai_api_key: ${{ secrets.OPENAI_API_KEY }}
+      gemini_api_key: ${{ secrets.GEMINI_API_KEY }}
 
   build:
     # fires for `flow` on an issue AND for `flow` on a flow/issue-N pull request
@@ -113,6 +123,8 @@ jobs:
     secrets:
       anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
       claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+      openai_api_key: ${{ secrets.OPENAI_API_KEY }}
+      gemini_api_key: ${{ secrets.GEMINI_API_KEY }}
       bot_token: ${{ secrets.GF_BOT_TOKEN }}
 
   sync-pr:
@@ -143,18 +155,20 @@ jobs:
 
 モデルを上書きするには、`shape` と `build` に
 `with: { model: claude-opus-4-8 }`（または別のモデル ID）を渡します。省略
-した場合は claude-code-action のデフォルトが使用されます。有効なモデル ID
-は [Anthropic models overview](https://docs.claude.com/en/docs/about-claude/models)
-に一覧があります（例: `claude-opus-4-8`、`claude-sonnet-5`、
-`claude-haiku-4-5-20251001`）。
+した場合は選択されたエージェントのデフォルトが使用されます。ID は実行され
+るエージェントのものである必要があります: Claude の ID は
+[Anthropic models overview](https://docs.claude.com/en/docs/about-claude/models)
+に一覧があり（例: `claude-opus-4-8`、`claude-sonnet-5`）、Codex と Gemini
+の ID はそれぞれのベンダードキュメントを参照してください。
 
 暴走防止策: すべてのエージェント実行は二重に制限されています —— エージェン
-トのターン数（`--max-turns`、`with: { max_turns: N }` で調整可能。デフォル
-トは Composer が50、Crafter が150）と、実時間のジョブタイムアウト（shape
-が30分、build が90分）です。どちらかを超えると実行は失敗し、Issue は実行
-ログへのリンクとともに該当する `flow/blocked-*` ステートになります。再試行
-するには `flow` を追加してください。`max_turns` を下げると1回の実行あたり
-の API 利用量を抑えられます。
+トのターン数（`with: { max_turns: N }` で調整可能。デフォルトは Composer
+が50、Crafter が150）と、実時間のジョブタイムアウト（shape が30分、build
+が90分）です。ターン数上限は claude と gemini で適用されます。codex には
+相当する設定がないため、タイムアウトのみが上限になります。どちらかを超え
+ると実行は失敗し、Issue は実行ログへのリンクとともに該当する
+`flow/blocked-*` ステートになります。再試行するには `flow` を追加してくだ
+さい。`max_turns` を下げると1回の実行あたりの API 利用量を抑えられます。
 
 ## 初回の実行
 

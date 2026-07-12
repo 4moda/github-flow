@@ -9,9 +9,9 @@ them.
 
 - **Human** — opens issues, adds the `flow` label, ticks the ready checkbox,
   reviews and merges PRs. Never touches `flow/*` labels.
-- **Composer** — Claude run that shapes an issue into the fixed template.
+- **Composer** — agent run that shapes an issue into the fixed template.
   Never touches code.
-- **Crafter** — Claude run that implements a shaped issue in the working
+- **Crafter** — agent run that implements a shaped issue in the working
   tree. Never commits, pushes, or merges.
 - **Workflows** — own all GitHub state: `flow/*` labels, issue bodies,
   comments, branches, and PRs. Everything they apply comes from agent

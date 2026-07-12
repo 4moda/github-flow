@@ -26,11 +26,15 @@ jobs:
       contents: read
       issues: write
     with:
+      # model must match the auto-selected agent; this repo provides Claude
+      # credentials only, so claude always wins the auto-detection
       model: claude-sonnet-5
       max_turns: 50
     secrets:
       anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
       claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+      openai_api_key: ${{ secrets.OPENAI_API_KEY }}
+      gemini_api_key: ${{ secrets.GEMINI_API_KEY }}
 
   build:
     # fires for `flow` on an issue AND on a flow/issue-N pull request
@@ -46,6 +50,8 @@ jobs:
     secrets:
       anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
       claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+      openai_api_key: ${{ secrets.OPENAI_API_KEY }}
+      gemini_api_key: ${{ secrets.GEMINI_API_KEY }}
       bot_token: ${{ secrets.GF_BOT_TOKEN }}
 
   sync-pr:

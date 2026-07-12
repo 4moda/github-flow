@@ -31,13 +31,22 @@ the repository setting.) Skipping this is safe to recover from: the issue
 lands in `flow/blocked-build` with the pushed branch intact, and adding
 `flow` after flipping the setting resumes by opening the PR.
 
-## 2. Add a Claude credential
+## 2. Add an agent credential
 
-In the consumer repository (or the owning org), add **one** of:
+In the consumer repository (or the owning org), add a secret for the coding
+agent you want to run — the workflows detect the agent from the secrets
+that are provided:
 
-- `ANTHROPIC_API_KEY` — an Anthropic API key, or
-- `CLAUDE_CODE_OAUTH_TOKEN` — a Claude Code OAuth token (from
-  `claude setup-token`, for Pro/Max subscriptions).
+| Secret | Agent that runs |
+|--------|-----------------|
+| `ANTHROPIC_API_KEY` (Anthropic API key) or `CLAUDE_CODE_OAUTH_TOKEN` (from `claude setup-token`, for Pro/Max subscriptions) | **Claude Code** via [anthropics/claude-code-action](https://github.com/anthropics/claude-code-action) |
+| `OPENAI_API_KEY` | **Codex** via [openai/codex-action](https://github.com/openai/codex-action) |
+| `GEMINI_API_KEY` | **Gemini CLI** via [google-github-actions/run-gemini-cli](https://github.com/google-github-actions/run-gemini-cli) |
+
+One secret is enough. When secrets for several agents are present,
+auto-detection prefers claude, then codex, then gemini; pass
+`with: { agent: codex }` (or `gemini`, `claude`) to `shape` and `build` to
+pick one explicitly.
 
 Optional: `GF_BOT_TOKEN` — a PAT (contents: write, pull-requests: write)
 used for pushing and creating PRs. Without it the default `GITHUB_TOKEN` is
@@ -95,6 +104,8 @@ jobs:
     secrets:
       anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
       claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+      openai_api_key: ${{ secrets.OPENAI_API_KEY }}
+      gemini_api_key: ${{ secrets.GEMINI_API_KEY }}
 
   build:
     # fires for `flow` on an issue AND for `flow` on a flow/issue-N pull request
@@ -107,6 +118,8 @@ jobs:
     secrets:
       anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
       claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+      openai_api_key: ${{ secrets.OPENAI_API_KEY }}
+      gemini_api_key: ${{ secrets.GEMINI_API_KEY }}
       bot_token: ${{ secrets.GF_BOT_TOKEN }}
 
   sync-pr:
@@ -136,17 +149,21 @@ change the two `github.event.label.name == 'flow'` conditions in the
 wrapper to match. The name must not start with `flow/`.
 
 To override the model, pass `with: { model: claude-opus-4-8 }` (or another
-model id) to `shape` and `build`. Omitting it uses claude-code-action's
-default. Valid model ids are listed in the
+model id) to `shape` and `build`. Omitting it uses the selected agent's
+default, and the id must belong to the agent that will run: Claude ids are
+listed in the
 [Anthropic models overview](https://docs.claude.com/en/docs/about-claude/models)
-(e.g. `claude-opus-4-8`, `claude-sonnet-5`, `claude-haiku-4-5-20251001`).
+(e.g. `claude-opus-4-8`, `claude-sonnet-5`), Codex and Gemini ids in the
+respective vendor docs.
 
 Runaway guards: every agent run is bounded twice — by agent turns
-(`--max-turns`, tunable via `with: { max_turns: N }`; defaults 50 for the
-Composer, 150 for the Crafter) and by wall-clock job timeouts (30 min shape,
-90 min build). Exceeding either fails the run, which lands the issue in the
-matching `flow/blocked-*` state with a run-log link; add `flow` to retry.
-Lower `max_turns` to cap API spend per run.
+(tunable via `with: { max_turns: N }`; defaults 50 for the Composer, 150
+for the Crafter) and by wall-clock job timeouts (30 min shape, 90 min
+build). The turn cap is enforced for claude and gemini; codex has no such
+setting, so only the timeout bounds it. Exceeding either fails the run,
+which lands the issue in the matching `flow/blocked-*` state with a
+run-log link; add `flow` to retry. Lower `max_turns` to cap API spend per
+run.
 
 ## First run
 

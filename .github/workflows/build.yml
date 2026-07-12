@@ -18,15 +18,26 @@ name: issue-driven-flow / build
 on:
   workflow_call:
     inputs:
+      agent:
+        description: >-
+          Coding agent to run: claude, codex, or gemini. Empty = auto-detect
+          from the provided secrets, preferring claude, then codex, then
+          gemini.
+        type: string
+        required: false
+        default: ""
       model:
-        description: Claude model override (empty = claude-code-action default)
+        description: >-
+          Model id override for the selected agent (empty = that agent's
+          default). Must match the agent that will run.
         type: string
         required: false
         default: ""
       max_turns:
         description: >-
           Upper bound on Crafter agent turns; the run fails (and the issue
-          lands in flow/blocked-build) when exceeded
+          lands in flow/blocked-build) when exceeded. Enforced for claude
+          and gemini; codex runs are bounded by the job timeout only.
         type: number
         required: false
         default: 150
@@ -40,10 +51,16 @@ on:
         default: "flow"
     secrets:
       anthropic_api_key:
-        description: Anthropic API key (or provide claude_code_oauth_token)
+        description: Anthropic API key; enables the claude agent (or provide claude_code_oauth_token)
         required: false
       claude_code_oauth_token:
-        description: Claude Code OAuth token (or provide anthropic_api_key)
+        description: Claude Code OAuth token; enables the claude agent (or provide anthropic_api_key)
+        required: false
+      openai_api_key:
+        description: OpenAI API key; enables the codex agent
+        required: false
+      gemini_api_key:
+        description: Gemini API key; enables the gemini agent
         required: false
       bot_token:
         description: >-
@@ -161,11 +178,47 @@ jobs:
             echo "OUT_DIR=${RUNNER_TEMP}/gf-out"
           } >> "$GITHUB_ENV"
 
+      # `uses:` cannot be chosen dynamically, so the selected agent gates
+      # one of three mutually exclusive Run Crafter steps below.
+      - name: Select agent
+        id: agent
+        env:
+          AGENT: ${{ inputs.agent }}
+          HAS_CLAUDE: ${{ (secrets.anthropic_api_key != '' || secrets.claude_code_oauth_token != '') && 'true' || 'false' }}
+          HAS_CODEX: ${{ secrets.openai_api_key != '' && 'true' || 'false' }}
+          HAS_GEMINI: ${{ secrets.gemini_api_key != '' && 'true' || 'false' }}
+        run: |
+          set -euo pipefail
+          agent=""
+          case "$AGENT" in
+            claude) if [ "$HAS_CLAUDE" = "true" ]; then agent=claude; fi ;;
+            codex)  if [ "$HAS_CODEX" = "true" ];  then agent=codex;  fi ;;
+            gemini) if [ "$HAS_GEMINI" = "true" ]; then agent=gemini; fi ;;
+            "")
+              if   [ "$HAS_CLAUDE" = "true" ]; then agent=claude
+              elif [ "$HAS_CODEX" = "true" ];  then agent=codex
+              elif [ "$HAS_GEMINI" = "true" ]; then agent=gemini
+              fi
+              ;;
+            *)
+              echo "::error::unknown agent '${AGENT}' (expected claude, codex, or gemini)"
+              exit 1
+              ;;
+          esac
+          if [ -z "$agent" ]; then
+            echo "::error::no credential for the requested agent. Provide anthropic_api_key/claude_code_oauth_token (claude), openai_api_key (codex), or gemini_api_key (gemini)."
+            exit 1
+          fi
+          echo "agent=${agent}" >> "$GITHUB_OUTPUT"
+
       - name: Check out repository
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
           token: ${{ secrets.bot_token || github.token }}
+          # the Crafter must not be able to push or read a token from
+          # .git/config; the publish step re-authenticates explicitly
+          persist-credentials: false
 
       - name: Mark issue as building
         uses: 4moda/issue-driven-flow/actions/update-issue@v2
@@ -190,7 +243,9 @@ jobs:
           set -euo pipefail
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          if git ls-remote --exit-code --heads origin "$BRANCH" >/dev/null; then
+          # fetch-depth 0 brought every branch, so the remote-tracking ref
+          # answers "does the branch exist" without credentials
+          if git show-ref --verify --quiet "refs/remotes/origin/${BRANCH}"; then
             git checkout "$BRANCH"
           else
             git checkout -b "$BRANCH"
@@ -205,25 +260,73 @@ jobs:
       - name: Prepare output directory
         run: mkdir -p "$OUT_DIR"
 
-      - name: Run Crafter
+      # one prompt for every agent: the contract file shipped into
+      # CONTEXT_DIR/contracts by build-context is the single source of truth
+      - name: Compose prompt
+        run: |
+          {
+            echo 'AGENT_PROMPT<<GF_PROMPT_EOF'
+            echo "You are the issue-driven-flow Crafter, implementing issue #${ISSUE} of ${REPO}."
+            echo
+            echo "Read ${CONTEXT_DIR}/contracts/crafter.md and follow that contract exactly."
+            echo "The context files for this run are in ${CONTEXT_DIR}."
+            echo "The repository is checked out in the working directory on branch ${BRANCH}; edit it directly."
+            echo "Write your run outputs into ${OUT_DIR}."
+            echo 'GF_PROMPT_EOF'
+          } >> "$GITHUB_ENV"
+
+      - name: Run Crafter (Claude Code)
+        if: steps.agent.outputs.agent == 'claude'
         uses: anthropics/claude-code-action@v1
         with:
           anthropic_api_key: ${{ secrets.anthropic_api_key }}
           claude_code_oauth_token: ${{ secrets.claude_code_oauth_token }}
           github_token: ${{ github.token }}
-          prompt: |
-            You are the issue-driven-flow Crafter, implementing issue #${{ env.ISSUE }} of ${{ github.repository }}.
-
-            Use the issue-driven-flow skill's Crafter role to implement this issue:
-            invoke the Skill tool for "issue-driven-flow", then follow its
-            Crafter contract (references/crafter.md) exactly.
-            The context files for this run are in ${{ env.CONTEXT_DIR }}.
-            The repository is checked out in the working directory on branch ${{ env.BRANCH }}; edit it directly.
-            Write your run outputs into ${{ env.OUT_DIR }}.
+          prompt: ${{ env.AGENT_PROMPT }}
+          # publishing belongs to the workflow: the contract already forbids
+          # commit/push/gh, the deny rules make it fail fast instead
           claude_args: >-
-            --allowedTools "Bash,Read,Write,Edit,Glob,Grep,Skill"
+            --allowedTools "Bash,Read,Write,Edit,Glob,Grep"
+            --disallowedTools "Bash(git commit:*),Bash(git push:*),Bash(gh:*)"
             --max-turns ${{ inputs.max_turns }}
             ${{ inputs.model != '' && format('--model {0}', inputs.model) || '' }}
+
+      - name: Run Crafter (Codex)
+        if: steps.agent.outputs.agent == 'codex'
+        uses: openai/codex-action@v1
+        with:
+          openai-api-key: ${{ secrets.openai_api_key }}
+          prompt: ${{ env.AGENT_PROMPT }}
+          model: ${{ inputs.model }}
+          # the extra writable root is where CONTEXT_DIR/OUT_DIR live;
+          # network stays on so the Crafter can install deps and run tests
+          sandbox: workspace-write
+          codex-args: '["-c", "sandbox_workspace_write.writable_roots=[\"${{ runner.temp }}\"]", "-c", "sandbox_workspace_write.network_access=true"]'
+          # the labeled-event gate (trigger label, triage+ actors) is this
+          # workflow's access control; no per-user gate here
+          allow-users: "*"
+
+      - name: Run Crafter (Gemini CLI)
+        if: steps.agent.outputs.agent == 'gemini'
+        uses: google-github-actions/run-gemini-cli@v0
+        env:
+          GEMINI_CLI_TRUST_WORKSPACE: "true"
+          # the agent needs no GitHub access; the workflow publishes results
+          GITHUB_TOKEN: ""
+        with:
+          gemini_api_key: ${{ secrets.gemini_api_key }}
+          gemini_model: ${{ inputs.model }}
+          prompt: ${{ env.AGENT_PROMPT }}
+          # tools.core is an allowlist: file tools plus shell for tests; no
+          # web, no MCP. Both grep tool names are listed to cover CLI
+          # versions before/after the rename.
+          settings: |-
+            {
+              "model": { "maxSessionTurns": ${{ inputs.max_turns }} },
+              "context": { "includeDirectories": ["${{ env.CONTEXT_DIR }}", "${{ env.OUT_DIR }}"] },
+              "tools": { "core": ["read_file", "read_many_files", "list_directory", "glob", "grep_search", "search_file_content", "write_file", "replace", "run_shell_command"] },
+              "telemetry": { "enabled": false }
+            }
 
       - name: Read Crafter result
         id: result
@@ -273,6 +376,10 @@ jobs:
           TITLE: ${{ steps.result.outputs.title }}
         run: |
           set -euo pipefail
+          # checkout ran with persist-credentials: false so the Crafter had
+          # no push credential; authenticate only now that it is done
+          server="${GH_SERVER#https://}"
+          git remote set-url origin "https://x-access-token:${GH_TOKEN}@${server}/${REPO}.git"
           if [ -n "$(git status --porcelain)" ]; then
             git add -A
             git commit -m "${TITLE}" -m "issue-driven-flow Crafter run for #${ISSUE}"

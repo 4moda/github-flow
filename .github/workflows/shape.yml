@@ -10,15 +10,26 @@ name: issue-driven-flow / shape
 on:
   workflow_call:
     inputs:
+      agent:
+        description: >-
+          Coding agent to run: claude, codex, or gemini. Empty = auto-detect
+          from the provided secrets, preferring claude, then codex, then
+          gemini.
+        type: string
+        required: false
+        default: ""
       model:
-        description: Claude model override (empty = claude-code-action default)
+        description: >-
+          Model id override for the selected agent (empty = that agent's
+          default). Must match the agent that will run.
         type: string
         required: false
         default: ""
       max_turns:
         description: >-
           Upper bound on Composer agent turns; the run fails (and the issue
-          lands in flow/blocked-shape) when exceeded
+          lands in flow/blocked-shape) when exceeded. Enforced for claude
+          and gemini; codex runs are bounded by the job timeout only.
         type: number
         required: false
         default: 50
@@ -33,10 +44,16 @@ on:
 
     secrets:
       anthropic_api_key:
-        description: Anthropic API key (or provide claude_code_oauth_token)
+        description: Anthropic API key; enables the claude agent (or provide claude_code_oauth_token)
         required: false
       claude_code_oauth_token:
-        description: Claude Code OAuth token (or provide anthropic_api_key)
+        description: Claude Code OAuth token; enables the claude agent (or provide anthropic_api_key)
+        required: false
+      openai_api_key:
+        description: OpenAI API key; enables the codex agent
+        required: false
+      gemini_api_key:
+        description: Gemini API key; enables the gemini agent
         required: false
 
 jobs:
@@ -113,8 +130,45 @@ jobs:
             echo "OUT_DIR=${RUNNER_TEMP}/gf-out"
           } >> "$GITHUB_ENV"
 
+      # `uses:` cannot be chosen dynamically, so the selected agent gates
+      # one of three mutually exclusive Run Composer steps below.
+      - name: Select agent
+        id: agent
+        env:
+          AGENT: ${{ inputs.agent }}
+          HAS_CLAUDE: ${{ (secrets.anthropic_api_key != '' || secrets.claude_code_oauth_token != '') && 'true' || 'false' }}
+          HAS_CODEX: ${{ secrets.openai_api_key != '' && 'true' || 'false' }}
+          HAS_GEMINI: ${{ secrets.gemini_api_key != '' && 'true' || 'false' }}
+        run: |
+          set -euo pipefail
+          agent=""
+          case "$AGENT" in
+            claude) if [ "$HAS_CLAUDE" = "true" ]; then agent=claude; fi ;;
+            codex)  if [ "$HAS_CODEX" = "true" ];  then agent=codex;  fi ;;
+            gemini) if [ "$HAS_GEMINI" = "true" ]; then agent=gemini; fi ;;
+            "")
+              if   [ "$HAS_CLAUDE" = "true" ]; then agent=claude
+              elif [ "$HAS_CODEX" = "true" ];  then agent=codex
+              elif [ "$HAS_GEMINI" = "true" ]; then agent=gemini
+              fi
+              ;;
+            *)
+              echo "::error::unknown agent '${AGENT}' (expected claude, codex, or gemini)"
+              exit 1
+              ;;
+          esac
+          if [ -z "$agent" ]; then
+            echo "::error::no credential for the requested agent. Provide anthropic_api_key/claude_code_oauth_token (claude), openai_api_key (codex), or gemini_api_key (gemini)."
+            exit 1
+          fi
+          echo "agent=${agent}" >> "$GITHUB_OUTPUT"
+
       - name: Check out repository
         uses: actions/checkout@v4
+        with:
+          # the Composer must not be able to push; nothing in this job
+          # needs git credentials after checkout
+          persist-credentials: false
 
       - name: Mark issue as shaping
         uses: 4moda/issue-driven-flow/actions/update-issue@v2
@@ -133,25 +187,73 @@ jobs:
       - name: Prepare output directory
         run: mkdir -p "$OUT_DIR"
 
-      - name: Run Composer
+      # one prompt for every agent: the contract file shipped into
+      # CONTEXT_DIR/contracts by build-context is the single source of truth
+      - name: Compose prompt
+        run: |
+          {
+            echo 'AGENT_PROMPT<<GF_PROMPT_EOF'
+            echo "You are the issue-driven-flow Composer, shaping issue #${ISSUE} of ${REPO}."
+            echo
+            echo "Read ${CONTEXT_DIR}/contracts/composer.md and follow that contract exactly."
+            echo "The context files for this run are in ${CONTEXT_DIR}."
+            echo "The target repository is checked out read-only in the working directory."
+            echo "Write your outputs into ${OUT_DIR}."
+            echo 'GF_PROMPT_EOF'
+          } >> "$GITHUB_ENV"
+
+      - name: Run Composer (Claude Code)
+        if: steps.agent.outputs.agent == 'claude'
         uses: anthropics/claude-code-action@v1
         with:
           anthropic_api_key: ${{ secrets.anthropic_api_key }}
           claude_code_oauth_token: ${{ secrets.claude_code_oauth_token }}
           github_token: ${{ github.token }}
-          prompt: |
-            You are the issue-driven-flow Composer, shaping issue #${{ env.ISSUE }} of ${{ github.repository }}.
-
-            Use the issue-driven-flow skill's Composer role to shape this issue:
-            invoke the Skill tool for "issue-driven-flow", then follow its
-            Composer contract (references/composer.md) exactly.
-            The context files for this run are in ${{ env.CONTEXT_DIR }}.
-            The target repository is checked out read-only in the working directory.
-            Write your outputs into ${{ env.OUT_DIR }}.
+          prompt: ${{ env.AGENT_PROMPT }}
+          # Write is limited to the output directory (// = absolute path
+          # rule), so the working tree stays read-only for real
           claude_args: >-
-            --allowedTools "Read,Glob,Grep,Write,Skill"
+            --allowedTools "Read,Glob,Grep,Write(/${{ runner.temp }}/gf-out/**)"
             --max-turns ${{ inputs.max_turns }}
             ${{ inputs.model != '' && format('--model {0}', inputs.model) || '' }}
+
+      - name: Run Composer (Codex)
+        if: steps.agent.outputs.agent == 'codex'
+        uses: openai/codex-action@v1
+        with:
+          openai-api-key: ${{ secrets.openai_api_key }}
+          prompt: ${{ env.AGENT_PROMPT }}
+          model: ${{ inputs.model }}
+          # workspace-write keeps network off; the extra writable root is
+          # where CONTEXT_DIR/OUT_DIR live. Shape never applies working-tree
+          # edits, so a stray write there is discarded with the runner.
+          sandbox: workspace-write
+          codex-args: '["-c", "sandbox_workspace_write.writable_roots=[\"${{ runner.temp }}\"]"]'
+          # the labeled-event gate (trigger label, triage+ actors) is this
+          # workflow's access control; no per-user gate here
+          allow-users: "*"
+
+      - name: Run Composer (Gemini CLI)
+        if: steps.agent.outputs.agent == 'gemini'
+        uses: google-github-actions/run-gemini-cli@v0
+        env:
+          GEMINI_CLI_TRUST_WORKSPACE: "true"
+          # the agent needs no GitHub access; the workflow applies results
+          GITHUB_TOKEN: ""
+        with:
+          gemini_api_key: ${{ secrets.gemini_api_key }}
+          gemini_model: ${{ inputs.model }}
+          prompt: ${{ env.AGENT_PROMPT }}
+          # tools.core is an allowlist: read-only exploration plus file
+          # writes (for OUT_DIR); no shell, no web. Both grep tool names are
+          # listed to cover CLI versions before/after the rename.
+          settings: |-
+            {
+              "model": { "maxSessionTurns": ${{ inputs.max_turns }} },
+              "context": { "includeDirectories": ["${{ env.CONTEXT_DIR }}", "${{ env.OUT_DIR }}"] },
+              "tools": { "core": ["read_file", "read_many_files", "list_directory", "glob", "grep_search", "search_file_content", "write_file"] },
+              "telemetry": { "enabled": false }
+            }
 
       - name: Read Composer result
         id: result

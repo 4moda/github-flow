@@ -3,8 +3,9 @@ name: issue-driven-flow
 description: >-
   Issue-driven AI development on GitHub. Humans steer with one public label
   (`flow`) and one checkbox (`ready for implementation`); reusable GitHub
-  Actions workflows run Claude to shape issues (Composer) and implement them
-  as pull requests (Crafter). Merging is always a human action.
+  Actions workflows run a coding agent (Claude Code, Codex, or Gemini CLI)
+  to shape issues (Composer) and implement them as pull requests (Crafter).
+  Merging is always a human action.
 metadata:
   version: 0.1.0
   category: automation
@@ -12,9 +13,11 @@ metadata:
 
 # issue-driven-flow — issue-driven AI execution for GitHub
 
-`issue-driven-flow` turns GitHub Issues into a task pipeline that Claude works
-through inside GitHub Actions. It lives in one shared repository; product
-repositories consume it with a single thin wrapper workflow.
+`issue-driven-flow` turns GitHub Issues into a task pipeline that a coding
+agent (Claude Code, Codex, or Gemini CLI — selected by the credential the
+consumer provides) works through inside GitHub Actions. It lives in one
+shared repository; product repositories consume it with a single thin
+wrapper workflow.
 
 ## Operating model in one paragraph
 

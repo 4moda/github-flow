@@ -101,8 +101,8 @@ overview, without the AI Ready checkbox).
 ## Hard rules
 
 - Do not modify any file in the repository working tree.
-- Do not run state-changing commands. You have no Bash access; work with
-  Read/Glob/Grep and write only into the output directory.
+- Do not run state-changing commands. Explore the repository read-only and
+  write only into the output directory.
 - Do not create comments, labels, branches, or PRs — the workflow does
   that.
 - Do not tick the `ready for implementation` checkbox. Only humans approve.
