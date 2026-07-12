@@ -2,7 +2,8 @@ name: issue-driven-flow build-context
 description: >-
   Collect everything a issue-driven-flow agent run needs into a context directory:
   issue payload, body and conversation, current flow/* state, ready-checkbox
-  state, linked PR with its review feedback, a repository tree summary, and
+  state, linked PR with its review feedback, a repository tree summary,
+  each role's handoff notes from its previous run, and
   the agent contracts. Also places skills declared in this repository's
   apm.yml (see https://github.com/microsoft/apm) at Claude Code's personal
   skill directory (~/.claude/skills/issue-driven-flow/), so Claude Code's own
@@ -48,7 +49,20 @@ runs:
 
         gh api "repos/${REPO}/issues/${ISSUE}" > "$DIR/issue.json"
         jq -r '.body // ""' "$DIR/issue.json" > "$DIR/issue-body.md"
-        gh api "repos/${REPO}/issues/${ISSUE}/comments" > "$DIR/issue-comments.json"
+        gh api --paginate "repos/${REPO}/issues/${ISSUE}/comments" --jq '.[]' \
+          | jq -s '.' > "$DIR/issue-comments.json"
+
+        # Handoff notes: each role may leave notes for its next run on this
+        # issue; the workflows persist them as one auto-managed, marked
+        # comment per role. Extract the newest into a dedicated file so the
+        # contracts can reference it (and so it survives even if the
+        # conversation grows long).
+        for role in composer crafter; do
+          jq -r --arg m "<!-- issue-driven-flow:notes:${role} -->" \
+            '[.[] | select(.body | startswith($m))] | last | .body // empty' \
+            "$DIR/issue-comments.json" > "$DIR/notes-${role}.md"
+          [ -s "$DIR/notes-${role}.md" ] || rm -f "$DIR/notes-${role}.md"
+        done
 
         state="$(python3 "$gf" state < "$DIR/issue.json")"
         ready="$(python3 "$gf" ready < "$DIR/issue.json")"

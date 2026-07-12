@@ -56,7 +56,10 @@ There is no AI reviewer role. Review and merge are human responsibilities.
 Both roles follow the same execution pattern: the workflow collects context
 into files, the agent reads its contract and writes result files, and the
 workflow applies those results to GitHub deterministically. The agents never
-call the GitHub API themselves.
+call the GitHub API themselves. Each role can also leave handoff notes
+(`notes.md`): the workflow persists them as one auto-managed comment per
+role on the issue and feeds them back to that role's next run, so re-runs
+keep continuity without hidden session state.
 
 ## Lifecycle
 
