@@ -1,10 +1,9 @@
 name: issue-driven-flow split-status
 description: >-
-  Resolve a just-closed issue's flow/split parent (if any), via the hidden
-  marker shape.yml writes into each sub-issue body at split-creation time,
-  and decide whether every sub-issue listed in that parent's "## Sub-issues"
-  checklist is now closed. Wraps scripts/gf.py so sync-pr.yml can react to a
-  completed split mechanically.
+  Resolve a just-closed issue's flow/split parent (if any) via GitHub's
+  native Sub-issues API, and decide whether every one of that parent's
+  native sub-issues is now closed. Wraps scripts/gf.py so sync-pr.yml can
+  react to a completed split mechanically.
 inputs:
   issue-number:
     description: Number of the issue that just closed
@@ -13,12 +12,12 @@ outputs:
   parent-number:
     description: >-
       The flow/split parent's issue number, or empty when the closed issue
-      was not created by a split
+      has no native parent
     value: ${{ steps.status.outputs.parent-number }}
   complete:
     description: >-
-      "true" when every sub-issue listed in the parent's checklist is
-      closed, else "false" (including when there is no parent)
+      "true" when every one of the parent's native sub-issues is closed,
+      else "false" (including when there is no parent)
     value: ${{ steps.status.outputs.complete }}
 runs:
   using: composite
@@ -34,22 +33,15 @@ runs:
         set -euo pipefail
         gf="${ACTION_PATH}/../../scripts/gf.py"
 
-        issue_json="$(gh api "repos/${REPO}/issues/${ISSUE}")"
-        parent_number="$(python3 "$gf" split-parent <<<"$issue_json")"
+        parent_json="$(gh api "repos/${REPO}/issues/${ISSUE}/parent" 2>/dev/null)" \
+          || parent_json="null"
+        parent_number="$(python3 "$gf" split-parent <<<"$parent_json")"
         echo "parent-number=${parent_number}" >> "$GITHUB_OUTPUT"
         if [ -z "$parent_number" ]; then
           echo "complete=false" >> "$GITHUB_OUTPUT"
           exit 0
         fi
 
-        parent_json="$(gh api "repos/${REPO}/issues/${parent_number}")"
-        siblings="[]"
-        while IFS= read -r n; do
-          [ -n "$n" ] || continue
-          sibling_json="$(gh api "repos/${REPO}/issues/${n}")"
-          siblings="$(jq --argjson s "$sibling_json" '. + [$s]' <<<"$siblings")"
-        done < <(python3 "$gf" sub-issue-numbers <<<"$parent_json")
-
-        complete="$(jq -n --argjson parent "$parent_json" --argjson siblings "$siblings" \
-          '{parent: $parent, siblings: $siblings}' | python3 "$gf" split-complete)"
+        siblings="$(gh api "repos/${REPO}/issues/${parent_number}/sub_issues")"
+        complete="$(python3 "$gf" split-complete <<<"$siblings")"
         echo "complete=${complete}" >> "$GITHUB_OUTPUT"

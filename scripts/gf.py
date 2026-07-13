@@ -19,15 +19,13 @@ Subcommands:
                       build routing only — shape is never gated by them);
                       --format github prints GITHUB_OUTPUT-style key=value
                       lines.
-  split-parent       Read a sub-issue on stdin, print the split parent's
-                      issue number recorded in its body, or an empty line
-                      when it has none.
-  sub-issue-numbers  Read a split parent issue on stdin, print each
-                      sub-issue number from its "## Sub-issues" checklist,
-                      one per line.
-  split-complete     Read {"parent": <issue>, "siblings": [<issue>, ...]}
-                      on stdin, print "true" when every sub-issue listed in
-                      the parent's checklist is closed, else "false".
+  split-parent       Read the payload of GET .../issues/{n}/parent on
+                      stdin (or "null" when that call 404s), print the
+                      parent's issue number, or an empty line when it has
+                      none.
+  split-complete     Read the payload of GET .../issues/{n}/sub_issues (a
+                      JSON array of issue objects) on stdin, print "true"
+                      when every one of them is closed, else "false".
 """
 
 from __future__ import annotations
@@ -65,14 +63,6 @@ READY_RE = re.compile(
     re.IGNORECASE | re.MULTILINE,
 )
 
-# hidden marker shape.yml writes into each sub-issue body at split-creation
-# time, so a closed sub-issue can be traced back to its flow/split parent
-SPLIT_PARENT_RE = re.compile(r"<!--\s*issue-driven-flow:split-parent:(\d+)\s*-->")
-
-# "## Sub-issues" checklist entries a flow/split parent's body is rewritten
-# with (`- [ ] #<n> <title>`), checked or not
-SUB_ISSUE_RE = re.compile(r"^\s*[-*]\s+\[[ xX]\]\s+#(\d+)\b", re.MULTILINE)
-
 
 class MultipleStateLabelsError(Exception):
     def __init__(self, labels: list[str]):
@@ -100,29 +90,21 @@ def is_ready(issue: dict) -> bool:
     return bool(READY_RE.search(issue.get("body") or ""))
 
 
-def split_parent_number(issue: dict) -> int | None:
-    """Return the flow/split parent issue number recorded in `issue`'s body,
-    or None when it was not created by a split (or has no marker)."""
-    match = SPLIT_PARENT_RE.search(issue.get("body") or "")
-    return int(match.group(1)) if match else None
+def split_parent_number(parent: dict | None) -> int | None:
+    """Return the issue number of `parent`, the payload of GET
+    .../issues/{issue_number}/parent, or None when that call 404s (the
+    issue has no native parent), passed through here as None or {}."""
+    return parent.get("number") if parent else None
 
 
-def sub_issue_numbers(parent: dict) -> list[int]:
-    """Return the sub-issue numbers listed in a flow/split parent's
-    "## Sub-issues" checklist, in body order."""
-    return [int(n) for n in SUB_ISSUE_RE.findall(parent.get("body") or "")]
-
-
-def split_complete(parent: dict, siblings: list[dict]) -> bool:
-    """Decide whether every sub-issue listed in `parent`'s checklist is
-    closed. `siblings` are the fetched issue payloads for those numbers;
-    entries for numbers not listed in the checklist are ignored. Returns
-    False when the parent lists no sub-issues at all."""
-    numbers = set(sub_issue_numbers(parent))
-    if not numbers:
+def split_complete(siblings: list[dict]) -> bool:
+    """Decide whether every one of a flow/split parent's native sub-issues
+    is closed. `siblings` is the payload of GET
+    .../issues/{issue_number}/sub_issues (a list of issue objects with a
+    `state` field). Returns False when there are no sub-issues at all."""
+    if not siblings:
         return False
-    closed = {s["number"] for s in siblings if s.get("state") == "closed"}
-    return numbers.issubset(closed)
+    return all(s.get("state") == "closed" for s in siblings)
 
 
 def route(
@@ -284,7 +266,6 @@ def main(argv: list[str] | None = None) -> int:
     )
     route_p.add_argument("--format", choices=["json", "github"], default="json")
     sub.add_parser("split-parent")
-    sub.add_parser("sub-issue-numbers")
     sub.add_parser("split-complete")
     args = parser.parse_args(argv)
 
@@ -311,11 +292,8 @@ def main(argv: list[str] | None = None) -> int:
     elif args.command == "split-parent":
         number = split_parent_number(payload)
         print(number if number is not None else "")
-    elif args.command == "sub-issue-numbers":
-        for number in sub_issue_numbers(payload):
-            print(number)
     elif args.command == "split-complete":
-        print("true" if split_complete(payload["parent"], payload["siblings"]) else "false")
+        print("true" if split_complete(payload) else "false")
     return 0
 
 
