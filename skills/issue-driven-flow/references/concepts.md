@@ -116,23 +116,31 @@ sub-issues (each already in the shaped template, state
 `flow/awaiting-approval`), rewrites the parent into a tracking overview
 with a `## Sub-issues` checklist, and sets the parent to `flow/split`. Each
 sub-issue body also carries a hidden marker
-(`<!-- issue-driven-flow:split-parent:<n> -->`) recording its parent, so a
-closed sub-issue can be traced back automatically. Each sub-issue is also
-registered with the parent through GitHub's native Sub-issues API, so issue
-lists, project boards, and the API itself show the parent/child relationship
-without reading either issue's body; a failure of that API call does not
-block sub-issue creation, and completion is still tracked solely through the
-checklist below. Humans approve and trigger each sub-issue individually; the
-parent's checklist ticks itself as sub-issues close (GitHub's native
-tasklist behavior). `flow` on a `flow/split` parent is acknowledged with a
-pointer to the sub-issues.
+(`<!-- issue-driven-flow:split-parent:<n> -->`) recording its parent, kept
+as a human-readable/legacy artifact. Each sub-issue is also registered with
+the parent through GitHub's native Sub-issues API
+(`POST .../issues/{n}/sub_issues`), which is what completion detection
+actually reads (see below); a failure of that best-effort `POST` does not
+block sub-issue creation, but does leave that sub-issue invisible to
+completion detection until it is linked to the parent some other way (for
+example, through the GitHub UI). Humans approve and trigger each sub-issue
+individually; the parent's checklist ticks itself as sub-issues close
+(GitHub's native tasklist behavior). `flow` on a `flow/split` parent is
+acknowledged with a pointer to the sub-issues.
 
-Once every sub-issue listed in the parent's checklist is closed, sync-pr.yml
+Once every one of a parent's native sub-issues is closed, sync-pr.yml
 (triggered by the `issues: closed` event, mechanically — no AI) closes the
 parent and sets it to `flow/done` with a comment stating the split is
-complete. While at least one sub-issue is still open, the parent is left
-untouched — no partial updates. A sub-issue closing with no split-parent
-marker (an ordinary issue) is a no-op for this check.
+complete. `actions/split-status` decides this by calling GitHub's native
+Sub-issues REST API directly — `GET .../issues/{n}/parent` to resolve a
+just-closed issue's split parent (404 means no parent), and
+`GET .../issues/{n}/sub_issues` to read the parent's current children and
+their close state — not by parsing the hidden marker or the `## Sub-issues`
+checklist text, so a sub-issue linked or unlinked through the native
+feature after split-creation time is picked up correctly. While at least
+one native sub-issue is still open, the parent is left untouched — no
+partial updates. A closed issue with no native parent (an ordinary issue)
+is a no-op for this check.
 
 ## What sync-pr does (and does not) react to
 
@@ -144,10 +152,10 @@ sync-pr.yml is purely mechanical — no AI. It runs only on:
 - `pull_request_review` `submitted` — only `changes_requested` reviews get
   a rework-guidance comment on the issue; approvals and plain comment
   reviews are no-ops.
-- `issues` `closed` — resolves the closed issue's `flow/split` parent (if
-  any) and, when every sub-issue listed in that parent's checklist is now
+- `issues` `closed` — resolves the closed issue's native Sub-issues parent
+  (if any) and, when every one of that parent's native sub-issues is now
   closed, closes the parent and sets it to `flow/done`. A no-op for issues
-  with no split parent, and for parents with sub-issues still open.
+  with no native parent, and for parents with sub-issues still open.
 
 Ordinary conversation comments (`issue_comment`) never trigger it, and PRs
 whose head branch is not `flow/issue-<n>` are ignored entirely.
