@@ -93,7 +93,7 @@ name: issue-driven-flow
 
 on:
   issues:
-    types: [labeled]
+    types: [labeled, closed]
   pull_request:
     types: [labeled, closed, reopened]
   pull_request_review:
@@ -130,7 +130,8 @@ jobs:
   sync-pr:
     if: >-
       github.event_name == 'pull_request_review' ||
-      (github.event_name == 'pull_request' && github.event.action != 'labeled')
+      (github.event_name == 'pull_request' && github.event.action != 'labeled') ||
+      (github.event_name == 'issues' && github.event.action == 'closed')
     uses: 4moda/issue-driven-flow/.github/workflows/sync-pr.yml@v2
     permissions:
       issues: write
@@ -202,7 +203,9 @@ Web 調査: デフォルトでエージェントには Web 検索・フェッチ
 Issue が1つの PR には大きすぎる場合、Composer はそれを分割します: サブ
 Issue はあらかじめ整形された状態（`flow/awaiting-approval`）で作成され、元
 の Issue はチェックリスト付きの `flow/split` 追跡用 Issue になり、各サブ
-Issue を個別に承認・トリガーします。
+Issue を個別に承認・トリガーします。すべてのサブ Issue がクローズされる
+と、`sync-pr.yml` が追跡用 Issue を自動的にクローズして `flow/done` にしま
+す —— 分割が完了したことに気づくための人間の操作は不要です。
 
 ## 人間が管理するもの
 
@@ -242,7 +245,8 @@ Issue を個別に承認・トリガーします。
   最新の Issue 本文と新しい人間のコメントが常に優先されます。
 - 通常の Issue/PR の会話コメントだけでは何もトリガーされません —— 実行が
   開始されるのは `flow` ラベルからのみです（機械的な同期のための PR のク
-  ローズ/再オープン/レビュー送信イベントを除く）。
+  ローズ/再オープン/レビュー送信イベントと Issue のクローズイベントを除
+  く）。
 - セキュリティモデル —— 誰のトークンが使われるか、GitHub の外に何が出る
   か、なぜエージェントがプッシュやマージをできないか:
   [README](../README.ja.md#security-model) を参照してください。

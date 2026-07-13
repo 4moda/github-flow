@@ -21,7 +21,7 @@ stateDiagram-v2
     Raw --> Shaping : + flow
     Shaping --> AwaitingApproval : shaped
     Shaping --> Split : too large, sub-issues created
-    Split --> [*]
+    Split --> Done : all sub-issues closed
     Shaping --> BlockedShape : needs input
     BlockedShape --> Shaping : answer + flow
     AwaitingApproval --> Shaping : + flow (box unticked)
@@ -106,11 +106,12 @@ apply mechanically, so every state transition is explainable from logs.
 |------|---------|
 | `.github/workflows/shape.yml` | reusable workflow: shape an issue (Composer) |
 | `.github/workflows/build.yml` | reusable workflow: implement an issue (Crafter) |
-| `.github/workflows/sync-pr.yml` | reusable workflow: mirror PR outcomes to the issue |
+| `.github/workflows/sync-pr.yml` | reusable workflow: mirror PR outcomes to the issue; close a `flow/split` parent once every sub-issue closes |
 | `.github/workflows/ci.yml` | tests + lint for this repository |
 | `actions/route` | shared routing decision (wraps `scripts/gf.py`) |
 | `actions/build-context` | collect issue/PR/repo context for agent runs |
-| `actions/update-issue` | the only writer of `flow/*` labels, bodies, comments |
+| `actions/update-issue` | the only writer of `flow/*` labels, bodies, comments, and issue open/closed status |
+| `actions/split-status` | resolve a closed issue's `flow/split` parent and whether every sub-issue is closed |
 | `scripts/gf.py` | tested decision logic (state, ready checkbox, routing) |
 | `scripts/setup-labels.sh` | create the `flow` + `flow/*` labels in a consumer repo |
 | `skills/issue-driven-flow/` | skill document and agent contracts |

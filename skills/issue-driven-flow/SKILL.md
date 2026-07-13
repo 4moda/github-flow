@@ -92,7 +92,7 @@ State semantics, invariants, and edge cases:
 |----------|---------------------------|-----------|------|
 | `shape.yml` | `issues: [labeled]` with `flow` | no state label, `flow/blocked-shape`, or `flow/awaiting-approval` with checkbox unticked | runs Composer; rewrites the issue body, or splits an oversized issue into shaped sub-issues; also acknowledges `flow` in states no workflow handles |
 | `build.yml` | `issues: [labeled]` or `pull_request: [labeled]` with `flow` | `flow/awaiting-approval` + checkbox ticked, `flow/blocked-build`, `flow/pr-open` | runs Crafter, commits/pushes `flow/issue-<n>`, opens or updates the PR; acknowledges PR-labeled triggers it cannot act on |
-| `sync-pr.yml` | `pull_request: [closed, reopened]`, `pull_request_review: [submitted]` | PR head branch is `flow/issue-<n>` | mirrors merge/close/reopen/changes-requested back to the issue — mechanical, no AI |
+| `sync-pr.yml` | `pull_request: [closed, reopened]`, `pull_request_review: [submitted]`, `issues: [closed]` | PR head branch is `flow/issue-<n>`; any issue close for the split check | mirrors merge/close/reopen/changes-requested back to the issue, and closes a `flow/split` parent once every sub-issue is closed — mechanical, no AI |
 
 Routing between shape and build is a single tested function
 (`scripts/gf.py route`), so exactly one workflow responds to any `flow`
@@ -113,7 +113,7 @@ skills/issue-driven-flow/       this skill and the agent contracts
   references/issue-template.md  shaped-issue body format
   references/concepts.md    state machine and invariants
 .github/workflows/        reusable workflows (shape, build, sync-pr) + CI
-actions/                  composite actions (route, build-context, update-issue)
+actions/                  composite actions (route, build-context, update-issue, split-status)
 scripts/                  gf.py decision logic, setup-labels.sh
 tests/                    unit tests for gf.py
 docs/adopting.md          consumer setup guide

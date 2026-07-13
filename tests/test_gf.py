@@ -12,9 +12,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts"))
 import gf  # noqa: E402
 
 
-def issue(labels=(), body="", state="open", pull_request=False):
+def issue(labels=(), body="", state="open", pull_request=False, number=1):
     payload = {
-        "number": 1,
+        "number": number,
         "state": state,
         "body": body,
         "labels": [{"name": name} for name in labels],
@@ -252,6 +252,66 @@ class PrTriggerRouteTest(unittest.TestCase):
         self.assertEqual(res["state"], "invalid")
 
 
+class SplitParentNumberTest(unittest.TestCase):
+    def test_marker_present(self):
+        body = "some text\n<!-- issue-driven-flow:split-parent:42 -->\nmore text"
+        self.assertEqual(gf.split_parent_number(issue(body=body)), 42)
+
+    def test_marker_absent(self):
+        self.assertIsNone(gf.split_parent_number(issue(body="no marker here")))
+
+    def test_missing_body(self):
+        payload = issue()
+        payload["body"] = None
+        self.assertIsNone(gf.split_parent_number(payload))
+
+    def test_marker_tolerates_extra_whitespace(self):
+        body = "<!--issue-driven-flow:split-parent:7-->"
+        self.assertEqual(gf.split_parent_number(issue(body=body)), 7)
+
+
+class SubIssueNumbersTest(unittest.TestCase):
+    def test_parses_checklist(self):
+        body = "## Sub-issues\n\n- [ ] #2 First\n- [x] #3 Second\n- [ ] #10 Third\n"
+        self.assertEqual(gf.sub_issue_numbers(issue(body=body)), [2, 3, 10])
+
+    def test_no_checklist(self):
+        self.assertEqual(gf.sub_issue_numbers(issue(body="nothing here")), [])
+
+    def test_missing_body(self):
+        payload = issue()
+        payload["body"] = None
+        self.assertEqual(gf.sub_issue_numbers(payload), [])
+
+
+class SplitCompleteTest(unittest.TestCase):
+    PARENT_BODY = "## Sub-issues\n\n- [ ] #2 First\n- [ ] #3 Second\n"
+
+    def test_all_siblings_closed(self):
+        parent = issue(body=self.PARENT_BODY, number=1)
+        siblings = [issue(number=2, state="closed"), issue(number=3, state="closed")]
+        self.assertTrue(gf.split_complete(parent, siblings))
+
+    def test_some_siblings_still_open(self):
+        parent = issue(body=self.PARENT_BODY, number=1)
+        siblings = [issue(number=2, state="closed"), issue(number=3, state="open")]
+        self.assertFalse(gf.split_complete(parent, siblings))
+
+    def test_no_split_parent_checklist(self):
+        # a parent with no "## Sub-issues" checklist has nothing to resolve
+        parent = issue(body="not a split parent", number=1)
+        self.assertFalse(gf.split_complete(parent, []))
+
+    def test_ignores_siblings_not_in_checklist(self):
+        parent = issue(body=self.PARENT_BODY, number=1)
+        siblings = [
+            issue(number=2, state="closed"),
+            issue(number=3, state="closed"),
+            issue(number=99, state="open"),
+        ]
+        self.assertTrue(gf.split_complete(parent, siblings))
+
+
 class CliTest(unittest.TestCase):
     def run_cli(self, argv, stdin_payload):
         stdin = io.StringIO(json.dumps(stdin_payload))
@@ -301,6 +361,37 @@ class CliTest(unittest.TestCase):
         )
         self.assertEqual(code, 0)
         self.assertEqual(json.loads(out)["action"], "build")
+
+    def test_split_parent_command(self):
+        body = "<!-- issue-driven-flow:split-parent:5 -->"
+        code, out = self.run_cli(["split-parent"], issue(body=body))
+        self.assertEqual(code, 0)
+        self.assertEqual(out.strip(), "5")
+
+    def test_split_parent_command_no_marker(self):
+        code, out = self.run_cli(["split-parent"], issue())
+        self.assertEqual(code, 0)
+        self.assertEqual(out.strip(), "")
+
+    def test_sub_issue_numbers_command(self):
+        body = "- [ ] #2 First\n- [x] #3 Second\n"
+        code, out = self.run_cli(["sub-issue-numbers"], issue(body=body))
+        self.assertEqual(code, 0)
+        self.assertEqual(out.splitlines(), ["2", "3"])
+
+    def test_split_complete_command(self):
+        parent = issue(body="- [ ] #2 First\n- [ ] #3 Second\n", number=1)
+        siblings = [issue(number=2, state="closed"), issue(number=3, state="closed")]
+        code, out = self.run_cli(["split-complete"], {"parent": parent, "siblings": siblings})
+        self.assertEqual(code, 0)
+        self.assertEqual(out.strip(), "true")
+
+    def test_split_complete_command_incomplete(self):
+        parent = issue(body="- [ ] #2 First\n- [ ] #3 Second\n", number=1)
+        siblings = [issue(number=2, state="closed"), issue(number=3, state="open")]
+        code, out = self.run_cli(["split-complete"], {"parent": parent, "siblings": siblings})
+        self.assertEqual(code, 0)
+        self.assertEqual(out.strip(), "false")
 
 
 if __name__ == "__main__":

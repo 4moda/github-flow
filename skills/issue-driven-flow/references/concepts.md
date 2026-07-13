@@ -14,8 +14,8 @@ them.
 - **Crafter** — agent run that implements a shaped issue in the working
   tree. Never commits, pushes, or merges.
 - **Workflows** — own all GitHub state: `flow/*` labels, issue bodies,
-  comments, branches, and PRs. Everything they apply comes from agent
-  result files or event payloads, deterministically.
+  comments, branches, PRs, and issue open/closed status. Everything they
+  apply comes from agent result files or event payloads, deterministically.
 
 ## States
 
@@ -33,7 +33,7 @@ is deliberately no `flow/raw` label, so new issues need no setup).
 | `flow/blocked-shape` | shaping needs human input (or the run failed) | shape.yml |
 | `flow/blocked-build` | implementation needs human input (or the run failed, or the PR was closed unmerged) | build.yml, sync-pr.yml |
 | `flow/done` | PR merged; flow complete | sync-pr.yml |
-| `flow/split` | split into sub-issues; tracking only, never implemented directly | shape.yml |
+| `flow/split` | split into sub-issues; tracking only, never implemented directly | shape.yml, cleared by sync-pr.yml once every sub-issue closes |
 
 `flow/shaping` and `flow/building` exist only while a run is executing; the
 run always exits them (to a result state, or to a blocked state via the
@@ -101,10 +101,20 @@ When a raw issue is too large for one reviewable PR, the Composer reports
 `split` instead of `shaped`. The workflow then mechanically creates 2–8
 sub-issues (each already in the shaped template, state
 `flow/awaiting-approval`), rewrites the parent into a tracking overview
-with a `## Sub-issues` checklist, and sets the parent to `flow/split`.
-Humans approve and trigger each sub-issue individually; the parent's
-checklist ticks itself as sub-issues close. `flow` on a `flow/split` parent
-is acknowledged with a pointer to the sub-issues.
+with a `## Sub-issues` checklist, and sets the parent to `flow/split`. Each
+sub-issue body also carries a hidden marker
+(`<!-- issue-driven-flow:split-parent:<n> -->`) recording its parent, so a
+closed sub-issue can be traced back automatically. Humans approve and
+trigger each sub-issue individually; the parent's checklist ticks itself as
+sub-issues close (GitHub's native tasklist behavior). `flow` on a
+`flow/split` parent is acknowledged with a pointer to the sub-issues.
+
+Once every sub-issue listed in the parent's checklist is closed, sync-pr.yml
+(triggered by the `issues: closed` event, mechanically — no AI) closes the
+parent and sets it to `flow/done` with a comment stating the split is
+complete. While at least one sub-issue is still open, the parent is left
+untouched — no partial updates. A sub-issue closing with no split-parent
+marker (an ordinary issue) is a no-op for this check.
 
 ## What sync-pr does (and does not) react to
 
@@ -116,6 +126,10 @@ sync-pr.yml is purely mechanical — no AI. It runs only on:
 - `pull_request_review` `submitted` — only `changes_requested` reviews get
   a rework-guidance comment on the issue; approvals and plain comment
   reviews are no-ops.
+- `issues` `closed` — resolves the closed issue's `flow/split` parent (if
+  any) and, when every sub-issue listed in that parent's checklist is now
+  closed, closes the parent and sets it to `flow/done`. A no-op for issues
+  with no split parent, and for parents with sub-issues still open.
 
 Ordinary conversation comments (`issue_comment`) never trigger it, and PRs
 whose head branch is not `flow/issue-<n>` are ignored entirely.
@@ -156,3 +170,7 @@ whose head branch is not `flow/issue-<n>` are ignored entirely.
 - **Crafter reports success with no changes** — nothing is pushed; the issue
   moves to `flow/blocked-build` explaining that the acceptance criteria may
   already be satisfied.
+- **Last sub-issue of a split closes** — the `flow/split` parent is closed
+  and set to `flow/done` automatically; a previously-closed sub-issue being
+  reopened later does not reopen the parent (out of scope, a human
+  decision).

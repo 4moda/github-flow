@@ -1,9 +1,9 @@
 name: issue-driven-flow update-issue
 description: >-
   Apply a issue-driven-flow transition to an issue: swap the flow/* state label,
-  optionally replace the body, post a comment, and remove the public
-  trigger label. All flow/* label writes go through this action so an
-  issue always ends up with at most one state label.
+  optionally replace the body, post a comment, close or reopen the issue,
+  and remove the public trigger label. All flow/* label writes go through
+  this action so an issue always ends up with at most one state label.
 inputs:
   issue-number:
     description: Issue number in the current repository
@@ -22,6 +22,12 @@ inputs:
     default: ""
   comment-file:
     description: File whose content is posted as a comment (wins over `comment`)
+    required: false
+    default: ""
+  close:
+    description: >-
+      Set "true" to close the issue, "false" to reopen it. Empty (default)
+      leaves the open/closed status unchanged.
     required: false
     default: ""
   remove-trigger:
@@ -44,6 +50,7 @@ runs:
         BODY_FILE: ${{ inputs.body-file }}
         COMMENT: ${{ inputs.comment }}
         COMMENT_FILE: ${{ inputs.comment-file }}
+        CLOSE: ${{ inputs.close }}
         REMOVE_TRIGGER: ${{ inputs.remove-trigger }}
         TRIGGER_LABEL: ${{ inputs.trigger-label }}
       run: |
@@ -88,6 +95,14 @@ runs:
         elif [ -n "$COMMENT" ]; then
           gh api -X POST "repos/${REPO}/issues/${ISSUE}/comments" \
             -f body="$COMMENT" >/dev/null
+        fi
+
+        if [ -n "$CLOSE" ]; then
+          case "$CLOSE" in
+            true) gh api -X PATCH "repos/${REPO}/issues/${ISSUE}" -f state=closed >/dev/null ;;
+            false) gh api -X PATCH "repos/${REPO}/issues/${ISSUE}" -f state=open >/dev/null ;;
+            *) echo "ERROR: close must be 'true' or 'false', got: $CLOSE" >&2; exit 1 ;;
+          esac
         fi
 
         if [ "$REMOVE_TRIGGER" = "true" ]; then

@@ -1,11 +1,14 @@
-# Reusable workflow: reflect PR outcomes back onto the linked issue.
+# Reusable workflow: reflect PR outcomes back onto the linked issue, and
+# close a flow/split parent once every one of its sub-issues has closed.
 #
 # Call from a consumer repository on:
 #   pull_request:        types: [closed, reopened]
 #   pull_request_review: types: [submitted]
+#   issues:               types: [closed]
 #
 # Only PRs on issue-driven-flow working branches (flow/issue-<n>) are handled; the
-# issue number is derived from the branch name.
+# issue number is derived from the branch name. Split-parent resolution
+# looks at whichever issue just closed, regardless of branch.
 name: issue-driven-flow / sync-pr
 
 on:
@@ -111,3 +114,36 @@ jobs:
             #${{ github.event.pull_request.number }} requested changes. Add
             the `${{ inputs.trigger_label }}` label to the PR (or to this
             issue) to have the Crafter address the review feedback.
+
+  # Purely mechanical, no AI: fires whenever any issue closes. Most closes
+  # have no flow/split parent (split-status resolves that to "none") and
+  # are a no-op; when the closed issue is the last open sub-issue of a
+  # flow/split parent, the parent is closed and marked flow/done.
+  split-complete:
+    if: github.event_name == 'issues' && github.event.action == 'closed'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    concurrency:
+      group: issue-driven-flow-split-${{ github.event.issue.number }}
+      cancel-in-progress: false
+    permissions:
+      issues: write
+    steps:
+      - name: Resolve split parent and completeness
+        id: split
+        uses: 4moda/issue-driven-flow/actions/split-status@v2
+        with:
+          issue-number: ${{ github.event.issue.number }}
+
+      - name: Every sub-issue closed — close the split parent
+        if: >-
+          steps.split.outputs.parent-number != '' &&
+          steps.split.outputs.complete == 'true'
+        uses: 4moda/issue-driven-flow/actions/update-issue@v2
+        with:
+          issue-number: ${{ steps.split.outputs.parent-number }}
+          state: flow/done
+          close: "true"
+          comment: >-
+            **issue-driven-flow** — every sub-issue of this split has been
+            closed. The split is complete.

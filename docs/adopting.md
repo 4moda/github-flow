@@ -88,7 +88,7 @@ name: issue-driven-flow
 
 on:
   issues:
-    types: [labeled]
+    types: [labeled, closed]
   pull_request:
     types: [labeled, closed, reopened]
   pull_request_review:
@@ -125,7 +125,8 @@ jobs:
   sync-pr:
     if: >-
       github.event_name == 'pull_request_review' ||
-      (github.event_name == 'pull_request' && github.event.action != 'labeled')
+      (github.event_name == 'pull_request' && github.event.action != 'labeled') ||
+      (github.event_name == 'issues' && github.event.action == 'closed')
     uses: 4moda/issue-driven-flow/.github/workflows/sync-pr.yml@v2
     permissions:
       issues: write
@@ -195,7 +196,9 @@ resume.
 If an issue is too large for one PR, the Composer splits it: sub-issues are
 created already shaped (`flow/awaiting-approval`), the original becomes a
 `flow/split` tracking issue with a checklist, and you approve and trigger
-each sub-issue individually.
+each sub-issue individually. Once every sub-issue has closed, `sync-pr.yml`
+closes the tracking issue and marks it `flow/done` automatically — no human
+step needed to notice the split finished.
 
 ## What humans manage
 
@@ -233,7 +236,8 @@ Only the `flow` label and the `ready for implementation` checkbox. All
   issue body and newer human comments always take precedence.
 - Ordinary issue/PR conversation comments never trigger anything by
   themselves — runs start only from the `flow` label (plus PR
-  close/reopen/review-submit events for the mechanical sync).
+  close/reopen/review-submit and issue-closed events for the mechanical
+  sync).
 - Security model — whose tokens are used, what leaves GitHub, why the
   agents can't push or merge: see the
   [README](../README.md#security-model).

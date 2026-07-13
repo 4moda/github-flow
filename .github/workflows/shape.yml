@@ -414,7 +414,10 @@ jobs:
           : > "$OUT_DIR/sub-list.md"
           for i in $(seq 0 $((count - 1))); do
             title="$(jq -r ".issues[$i].title" "$OUT_DIR/result.json")"
-            jq -r ".issues[$i].body" "$OUT_DIR/result.json" > "$OUT_DIR/sub-body.md"
+            {
+              echo "<!-- issue-driven-flow:split-parent:${ISSUE} -->"
+              jq -r ".issues[$i].body" "$OUT_DIR/result.json"
+            } > "$OUT_DIR/sub-body.md"
             number="$(gh api -X POST "repos/${REPO}/issues" \
               -f title="$title" -F body=@"$OUT_DIR/sub-body.md" \
               -f "labels[]=flow/awaiting-approval" --jq '.number')"

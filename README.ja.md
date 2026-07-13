@@ -21,7 +21,7 @@ stateDiagram-v2
     Raw --> Shaping : + flow
     Shaping --> AwaitingApproval : shaped
     Shaping --> Split : too large, sub-issues created
-    Split --> [*]
+    Split --> Done : all sub-issues closed
     Shaping --> BlockedShape : needs input
     BlockedShape --> Shaping : answer + flow
     AwaitingApproval --> Shaping : + flow (box unticked)
@@ -110,11 +110,12 @@ AI が呼び出されるのは **正確に2つのステップ** だけです:
 |------|------|
 | `.github/workflows/shape.yml` | 再利用可能ワークフロー: Issue を整形する（Composer） |
 | `.github/workflows/build.yml` | 再利用可能ワークフロー: Issue を実装する（Crafter） |
-| `.github/workflows/sync-pr.yml` | 再利用可能ワークフロー: PR の結果を Issue に反映する |
+| `.github/workflows/sync-pr.yml` | 再利用可能ワークフロー: PR の結果を Issue に反映する。`flow/split` の親 Issue はすべてのサブ Issue がクローズされたらクローズする |
 | `.github/workflows/ci.yml` | このリポジトリのテスト + lint |
 | `actions/route` | 共有のルーティング判定（`scripts/gf.py` をラップ） |
 | `actions/build-context` | エージェント実行用の Issue/PR/リポジトリコンテキストを収集 |
-| `actions/update-issue` | `flow/*` ラベル、本文、コメントを書き込む唯一の存在 |
+| `actions/update-issue` | `flow/*` ラベル、本文、コメント、Issue のオープン/クローズ状態を書き込む唯一の存在 |
+| `actions/split-status` | クローズされた Issue の `flow/split` 親と、すべてのサブ Issue がクローズ済みかどうかを解決する |
 | `scripts/gf.py` | テスト済みの判定ロジック（ステート、承認チェックボックス、ルーティング） |
 | `scripts/setup-labels.sh` | 利用側リポジトリに `flow` + `flow/*` ラベルを作成する |
 | `skills/issue-driven-flow/` | スキルドキュメントとエージェント契約 |
