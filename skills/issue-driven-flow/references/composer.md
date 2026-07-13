@@ -72,10 +72,35 @@ criteria would span several unrelated areas — report `split` instead of
   unticked). The `Original request` block may simply say
   "Split from the parent issue." Cross-reference sibling sub-issues by
   title in the **Dependencies** section — their numbers don't exist yet.
-  When a sub-issue is blocked by a sibling, also list that sibling's exact
-  `title` in that entry's `blocked_by_titles` (see Outputs), so the
-  workflow can register a native "blocked by" relationship once every
-  sub-issue has a number.
+  Record a sibling dependency there, and list that sibling's exact `title`
+  in that entry's `blocked_by_titles` (see Outputs) so the workflow can
+  register a native "blocked by" relationship once every sub-issue has a
+  number, whenever two sub-issues must stay consistent with each other —
+  a shared interface, contract, or call site — even if neither literally
+  requires the other's code to exist first. Don't limit dependency
+  recording to the case where one sub-issue's source code cannot be
+  written until the other's exists; that's the easy case, not the only
+  one. For example, when splitting "add a screen" and "add the menu entry
+  that navigates to it" into siblings, the menu sub-issue is blocked by
+  the screen sub-issue: the menu's call site has to match how the screen
+  is actually invoked, even though neither sub-issue's code depends on the
+  other's to compile or run.
+- Before accepting a split boundary that would need such a dependency,
+  prefer a boundary that avoids the coupling in the first place, as long
+  as doing so keeps each resulting sub-issue reasonably small and
+  independently reviewable — e.g. keep a shared interface or call site
+  together with its own definition in one sub-issue, rather than splitting
+  exactly along that boundary. In the screen/menu example, folding the
+  screen's invocation site into the screen sub-issue — so the menu
+  sub-issue only has to call an already-fixed, documented invocation —
+  removes the need for a dependency entirely, without changing how much
+  work is split out. Only accept a split that needs a recorded dependency
+  when avoiding it would make a sub-issue too large for one reviewable PR,
+  or when no such regrouping is possible. Both this preference and the
+  recording criterion above are guidance for identifying and avoiding
+  *real* dependencies: neither licenses inventing a dependency when the
+  work is genuinely unrelated, nor forcing sub-issues together that are
+  legitimately independent.
 - Write `issue-body.md` as the **parent overview**: Background, Problem,
   and the split rationale. Do **not** include the "AI Ready" checkbox — the
   parent becomes a tracking issue and is never implemented directly. The
