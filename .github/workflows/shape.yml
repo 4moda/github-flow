@@ -368,6 +368,31 @@ jobs:
             Adding `${{ inputs.trigger_label }}` while the box is unchecked
             sends the issue back to the Composer instead.
 
+      # Native "blocked by" links for issues the Composer named by number in
+      # result.json's blocked_by. The API takes a database id, not the issue
+      # number, so each number is resolved first. Auxiliary to the flow (like
+      # the notes.md step above): a bad number or a transient API error must
+      # not fail the run, since the body has already been applied.
+      - name: Register blocking dependencies — shaped
+        if: steps.result.outputs.outcome == 'shaped'
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          numbers="$(jq -r '.blocked_by[]? // empty' "$OUT_DIR/result.json")"
+          [ -n "$numbers" ] || exit 0
+          while IFS= read -r dep_number; do
+            [ -n "$dep_number" ] || continue
+            dep_id="$(gh api "repos/${REPO}/issues/${dep_number}" --jq .id 2>/dev/null)" || {
+              echo "::warning::could not resolve issue #${dep_number} to a database id; skipping dependency registration"
+              continue
+            }
+            gh api -X POST "repos/${REPO}/issues/${ISSUE}/dependencies/blocked_by" \
+              -F issue_id="$dep_id" >/dev/null 2>&1 || \
+              echo "::warning::failed to register #${ISSUE} as blocked by #${dep_number}"
+          done <<< "$numbers"
+
       # Sub-issue creation is mechanical: the Composer only proposed the
       # titles and bodies in result.json. Each sub-issue is also registered
       # with the parent via the native Sub-issues API (using the sub-issue's
@@ -387,6 +412,7 @@ jobs:
             >/dev/null 2>&1 || true
           count="$(jq '.issues | length' "$OUT_DIR/result.json")"
           : > "$OUT_DIR/sub-list.md"
+          : > "$OUT_DIR/sub-issues.jsonl"
           for i in $(seq 0 $((count - 1))); do
             title="$(jq -r ".issues[$i].title" "$OUT_DIR/result.json")"
             {
@@ -401,7 +427,10 @@ jobs:
             gh api -X POST "repos/${REPO}/issues/${ISSUE}/sub_issues" \
               -F sub_issue_id="$id" >/dev/null 2>&1 || true
             echo "- [ ] #${number} ${title}" >> "$OUT_DIR/sub-list.md"
+            jq -n --arg t "$title" --argjson n "$number" \
+              '{title: $t, number: $n}' >> "$OUT_DIR/sub-issues.jsonl"
           done
+          jq -s '.' "$OUT_DIR/sub-issues.jsonl" > "$OUT_DIR/sub-issues.json"
           {
             cat "$OUT_DIR/issue-body.md"
             echo
@@ -425,6 +454,41 @@ jobs:
             `${{ inputs.trigger_label }}` label on that sub-issue to
             implement it. This issue is now
             a tracking issue and will not be implemented directly.
+
+      # Native "blocked by" links between siblings the Composer cross-referenced
+      # by title in result.json's issues[].blocked_by_titles, resolved to real
+      # numbers now that every sub-issue exists (sub-issues.json, written by the
+      # create-sub-issues step above). Auxiliary to the flow, like the shaped
+      # step above: failures here must not fail the run.
+      - name: Register blocking dependencies — split
+        if: steps.result.outputs.outcome == 'split'
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          count="$(jq '.issues | length' "$OUT_DIR/result.json")"
+          for i in $(seq 0 $((count - 1))); do
+            number="$(jq -r --argjson i "$i" '.[$i].number' "$OUT_DIR/sub-issues.json")"
+            titles="$(jq -r ".issues[$i].blocked_by_titles[]? // empty" "$OUT_DIR/result.json")"
+            [ -n "$titles" ] || continue
+            while IFS= read -r dep_title; do
+              [ -n "$dep_title" ] || continue
+              dep_number="$(jq -r --arg t "$dep_title" \
+                '[.[] | select(.title == $t)] | .[0].number // empty' "$OUT_DIR/sub-issues.json")"
+              if [ -z "$dep_number" ]; then
+                echo "::warning::could not resolve sibling title '${dep_title}' to a sub-issue number; skipping"
+                continue
+              fi
+              dep_id="$(gh api "repos/${REPO}/issues/${dep_number}" --jq .id 2>/dev/null)" || {
+                echo "::warning::could not resolve issue #${dep_number} to a database id; skipping dependency registration"
+                continue
+              }
+              gh api -X POST "repos/${REPO}/issues/${number}/dependencies/blocked_by" \
+                -F issue_id="$dep_id" >/dev/null 2>&1 || \
+                echo "::warning::failed to register #${number} as blocked by #${dep_number}"
+            done <<< "$titles"
+          done
 
       - name: Apply result — blocked
         if: steps.result.outputs.outcome == 'blocked'

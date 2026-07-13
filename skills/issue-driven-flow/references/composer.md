@@ -51,6 +51,12 @@ Rewrite the issue body into the template defined in
      block. If the body already contains that block from a previous shaping
      run, keep it as-is; do not re-wrap or nest it.
    - Include the **AI Ready** section with the checkbox **unticked**.
+   - Describe dependencies in prose in the **Dependencies** section as
+     always. When a dependency is on an issue that already exists in this
+     repository, also list its number in result.json's `blocked_by` (see
+     Outputs) so the workflow can register it as a native GitHub "blocked
+     by" relationship. Do not invent a number to satisfy this field — when
+     unsure, leave it out and keep the dependency as prose only.
 
 ## When to split
 
@@ -66,6 +72,10 @@ criteria would span several unrelated areas — report `split` instead of
   unticked). The `Original request` block may simply say
   "Split from the parent issue." Cross-reference sibling sub-issues by
   title in the **Dependencies** section — their numbers don't exist yet.
+  When a sub-issue is blocked by a sibling, also list that sibling's exact
+  `title` in that entry's `blocked_by_titles` (see Outputs), so the
+  workflow can register a native "blocked by" relationship once every
+  sub-issue has a number.
 - Write `issue-body.md` as the **parent overview**: Background, Problem,
   and the split rationale. Do **not** include the "AI Ready" checkbox — the
   parent becomes a tracking issue and is never implemented directly. The
@@ -96,12 +106,31 @@ Write into the output directory named in the prompt.
 {
   "outcome": "shaped" | "blocked" | "split",
   "note": "shaped/split: one-paragraph summary. blocked: the concrete questions or missing input (markdown allowed).",
-  "issues": [{"title": "...", "body": "..."}]
+  "blocked_by": [123],
+  "issues": [{"title": "...", "body": "...", "blocked_by_titles": ["..."]}]
 }
 ```
 
 `issues` is required only for `split` (2–8 entries, each a full shaped
 template body).
+
+`blocked_by` and `blocked_by_titles` are machine-readable blocking
+dependencies, separate from the freeform **Dependencies** section in the
+issue body. The body section is prose for humans; these fields are what
+the workflow reads to register native GitHub "blocked by" relationships
+via the Issue Dependencies API. Both are optional — omit or leave empty
+when there is nothing to register, and never invent a number or title to
+fill them.
+
+- `blocked_by` (`shaped` outcome only): issue numbers, already existing in
+  this repository, that this issue is blocked by.
+- `blocked_by_titles` (per entry in `issues`, `split` outcome only): exact
+  `title` strings of other entries in the same `issues` array that this
+  sub-issue is blocked by. Sibling sub-issues don't have numbers yet at
+  split time, so titles are the only way to reference them; the workflow
+  resolves titles to numbers after creating all sub-issues.
+- Both are scoped to this repository — cross-repository dependencies are
+  out of scope.
 
 `issue-body.md` — required when `outcome` is `shaped` (the complete
 replacement issue body, following the template) or `split` (the parent

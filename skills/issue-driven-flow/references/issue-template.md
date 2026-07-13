@@ -58,3 +58,12 @@ diff.>
   preserved verbatim by later re-shapes.
 - Sub-issues created by a split use this same template; their
   `Original request` block may simply reference the parent issue.
+- The **Dependencies** bullets are prose for humans; they do not by
+  themselves register anything. When a bullet references an issue that
+  already exists in this repository (by number) or, in a split, a sibling
+  sub-issue (by its exact title), also record that reference in
+  `result.json`'s `blocked_by` / `blocked_by_titles` fields (see
+  `composer.md`) so `shape.yml` can additionally register it as a native
+  GitHub "blocked by" relationship. A bullet with no matching repository
+  issue number or sibling title (e.g. "None", or a dependency on an
+  external decision) stays prose-only.
