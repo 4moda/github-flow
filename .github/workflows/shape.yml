@@ -369,7 +369,12 @@ jobs:
             sends the issue back to the Composer instead.
 
       # Sub-issue creation is mechanical: the Composer only proposed the
-      # titles and bodies in result.json.
+      # titles and bodies in result.json. Each sub-issue is also registered
+      # with the parent via the native Sub-issues API (using the sub-issue's
+      # numeric database id, not its repo-scoped number) so issue lists and
+      # project boards show the parent/child relationship natively, in
+      # addition to the checklist/marker mechanism below. A failure there
+      # must not fail sub-issue creation.
       - name: Apply result — split (create sub-issues)
         id: split
         if: steps.result.outputs.outcome == 'split'
@@ -388,9 +393,13 @@ jobs:
               echo "<!-- issue-driven-flow:split-parent:${ISSUE} -->"
               jq -r ".issues[$i].body" "$OUT_DIR/result.json"
             } > "$OUT_DIR/sub-body.md"
-            number="$(gh api -X POST "repos/${REPO}/issues" \
+            created="$(gh api -X POST "repos/${REPO}/issues" \
               -f title="$title" -F body=@"$OUT_DIR/sub-body.md" \
-              -f "labels[]=flow/awaiting-approval" --jq '.number')"
+              -f "labels[]=flow/awaiting-approval")"
+            number="$(jq -r '.number' <<<"$created")"
+            id="$(jq -r '.id' <<<"$created")"
+            gh api -X POST "repos/${REPO}/issues/${ISSUE}/sub_issues" \
+              -F sub_issue_id="$id" >/dev/null 2>&1 || true
             echo "- [ ] #${number} ${title}" >> "$OUT_DIR/sub-list.md"
           done
           {

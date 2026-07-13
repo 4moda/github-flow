@@ -104,10 +104,15 @@ sub-issues (each already in the shaped template, state
 with a `## Sub-issues` checklist, and sets the parent to `flow/split`. Each
 sub-issue body also carries a hidden marker
 (`<!-- issue-driven-flow:split-parent:<n> -->`) recording its parent, so a
-closed sub-issue can be traced back automatically. Humans approve and
-trigger each sub-issue individually; the parent's checklist ticks itself as
-sub-issues close (GitHub's native tasklist behavior). `flow` on a
-`flow/split` parent is acknowledged with a pointer to the sub-issues.
+closed sub-issue can be traced back automatically. Each sub-issue is also
+registered with the parent through GitHub's native Sub-issues API, so issue
+lists, project boards, and the API itself show the parent/child relationship
+without reading either issue's body; a failure of that API call does not
+block sub-issue creation, and completion is still tracked solely through the
+checklist below. Humans approve and trigger each sub-issue individually; the
+parent's checklist ticks itself as sub-issues close (GitHub's native
+tasklist behavior). `flow` on a `flow/split` parent is acknowledged with a
+pointer to the sub-issues.
 
 Once every sub-issue listed in the parent's checklist is closed, sync-pr.yml
 (triggered by the `issues: closed` event, mechanically — no AI) closes the
